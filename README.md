@@ -2,7 +2,8 @@
 
 Real-time rental apartment monitor for Israel. Sends Telegram alerts within minutes of a new listing being posted in target neighborhoods.
 
-Built because native Yad2 alerts are too slow — high-demand listings disappear within hours.
+Built because listings disappear within hours — native Yad2 alerts are too slow, and Facebook groups have no native alerts at all.
+
 
 ---
 
