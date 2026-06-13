@@ -4,8 +4,6 @@ Real-time rental apartment monitor for Israel. Sends Telegram alerts within minu
 
 Built because native Yad2 alerts are too slow — high-demand listings disappear within hours.
 
-Inspired by [dorin.app](https://dorin.app) — this is the free personal version.
-
 ---
 
 ## What It Does
