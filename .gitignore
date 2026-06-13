@@ -1,0 +1,6 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+seen_listings.db
+*.log

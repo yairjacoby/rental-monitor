@@ -1,0 +1,30 @@
+{
+  "searches": [
+    {
+      "city": "הוד השרון",
+      "city_aliases": ["הוד השרון", "Hod HaSharon", "Hod Hasharon"],
+      "neighborhoods": ["שכונה 1200", "1200"],
+      "max_price": 13000,
+      "currency_aliases": ["₪", "ש״ח", "שח", "שקל", "שקלים", "NIS"]
+    }
+  ],
+  "filters": {
+    "rooms_min": 4,
+    "rooms_aliases": ["חדרים", "חד׳", "חד'", "rooms", "rm"],
+    "must_have": {
+      "parking": ["חניה", "חנייה", "parking", "חנ׳"],
+      "safe_room": ["ממד", "ממ״ד", "מרחב מוגן", "safe room", "ממ\"ד"]
+    }
+  },
+  "facebook_groups": [
+    "https://www.facebook.com/share/g/1EWSUWPM7i/",
+    "https://www.facebook.com/share/g/1ExG6YipWn/",
+    "https://www.facebook.com/share/g/1DLdauYUWD/",
+    "https://www.facebook.com/share/g/1DkXixfNZo/",
+    "https://www.facebook.com/share/g/18nvrayqZp/"
+  ],
+  "broker": {
+    "exclude_broker": false,
+    "broker_aliases": ["תיווך", "מתווך", "מתווכת", "broker", "agent", "דמי תיווך"]
+  }
+}
