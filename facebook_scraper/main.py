@@ -2,6 +2,8 @@ import logging
 from apscheduler.schedulers.blocking import BlockingScheduler
 from seen_store import init_db
 from scraper_facebook import scrape_all_groups
+# from scraper_yad2 import scrape_yad2
+# from scraper_madlan import scrape_madlan
 from parser_claude import parse_listings
 from notifier_telegram import send_alert
 from config_loader import load_config

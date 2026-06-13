@@ -1,6 +1,6 @@
 # 🏠 Rental Monitor — Israel
 
-Real-time rental apartment monitor for Israel. Sends Telegram alerts within minutes of a new listing being posted in target neighborhoods.
+Real-time rental apartment monitor for Israel. Scrapes Yad2, Madlan, and public Facebook groups every 15 minutes using Playwright. Sends Telegram alerts within minutes of a new listing being posted.
 
 Built because listings disappear within hours — native Yad2 alerts are too slow, and Facebook groups have no native alerts at all.
 
@@ -19,14 +19,16 @@ Built because listings disappear within hours — native Yad2 alerts are too slo
 ---
 
 ## Architecture
-n8n (Railway)                        Python / Railway
-├── Yad2 HTTP polling                ├── Playwright → Facebook groups
-├── Madlan HTTP polling              ├── Claude API → Hebrew text parsing
-├── Filter by config                 ├── Filter by config
-├── Deduplication (n8n data store)   ├── Deduplication (SQLite)
-└── Telegram alert                   └── Telegram alert
+Python Service (Railway)
+├── APScheduler — runs every 15 minutes
+├── scraper_yad2.py — Playwright scrapes Yad2
+├── scraper_madlan.py — Playwright scrapes Madlan
+├── scraper_facebook.py — Playwright scrapes public Facebook groups
+├── parser_claude.py — Claude API parses Hebrew free text (Facebook only)
+├── notifier_telegram.py — sends Telegram alerts
+└── seen_store.py — SQLite deduplication
 
-Two services, one repo. n8n handles structured API sources with no code. Python handles Facebook which requires real browser automation.
+One service, one language, consistent Playwright-based scraping across all sources.
 
 ---
 
@@ -34,12 +36,12 @@ Two services, one repo. n8n handles structured API sources with no code. Python 
 
 | Tool | Role |
 |---|---|
-| n8n | Yad2 + Madlan polling, filtering, deduplication, Telegram |
-| Python + Playwright | Facebook group scraping (headless Chromium) |
+| Python + Playwright | Yad2, Madlan, Facebook scraping (headless Chromium) |
 | Claude API (Sonnet) | Hebrew free-text parsing — extracts price, rooms, location, broker flag |
+| APScheduler | Runs every 15 minutes inside the Python process |
 | Telegram Bot | Real-time alerts |
-| Railway | Hosting for both n8n and Python service |
-| SQLite | Deduplication store for Facebook scraper |
+| Railway | Hosting |
+| SQLite | Deduplication — never alerts twice for the same listing |
 
 ---
 
