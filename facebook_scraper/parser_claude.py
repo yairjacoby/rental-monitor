@@ -7,6 +7,7 @@ Filters against config parameters and returns only matching listings.
 import os
 import json
 import logging
+from typing import Optional
 import anthropic
 
 log = logging.getLogger(__name__)
@@ -35,7 +36,7 @@ Parking aliases: חניה, חנייה, חנ׳
 Safe room aliases: ממד, ממ״ד, מרחב מוגן"""
 
 
-def parse_post(post: dict, config: dict) -> dict | None:
+def parse_post(post: dict, config: dict) -> Optional[dict]:
     """
     Parse a single Facebook post with Claude.
     Returns structured listing dict if it matches config filters, else None.
@@ -141,7 +142,7 @@ def parse_post(post: dict, config: dict) -> dict | None:
     }
 
 
-def parse_listings(posts: list[dict], config: dict) -> list[dict]:
+def parse_listings(posts: list[dict], config: dict) -> list:
     """Parse and filter a list of raw posts. Returns matched listings only."""
     matched = []
     for post in posts:

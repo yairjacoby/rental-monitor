@@ -11,6 +11,7 @@ import time
 import random
 import re
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
+from typing import Optional
 from seen_store import is_seen, mark_seen
 from config_store import get_cities, get_neighborhoods, get_filter
 
@@ -45,7 +46,7 @@ def build_madlan_url(city_name: str, neighborhood_name: str = None,
     return f'{BASE_URL}/{location}-ישראל?filters={filters}&marketplace=residential'
 
 
-def extract_listings_from_page(page) -> list[dict]:
+def extract_listings_from_page(page) -> list:
     """Extract listing cards from rendered Madlan page."""
     listings = []
     try:
@@ -132,7 +133,7 @@ def extract_listings_from_page(page) -> list[dict]:
 
 
 def scrape_city(page, city_name: str, neighborhood_name: str = None,
-                min_rooms: float = 4, max_price: int = None) -> list[dict]:
+                min_rooms: float = 4, max_price: int = None) -> list:
     """Scrape one city/neighborhood combination."""
     url = build_madlan_url(city_name, neighborhood_name, min_rooms, max_price)
     log.info(f'Scraping Madlan: {url}')
@@ -161,7 +162,7 @@ def scrape_city(page, city_name: str, neighborhood_name: str = None,
         return []
 
 
-def scrape_madlan() -> list[dict]:
+def scrape_madlan() -> list:
     """
     Main entry point. Scrapes all configured cities and neighborhoods.
     Returns list of new listings not seen before.

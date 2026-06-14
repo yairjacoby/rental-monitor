@@ -5,6 +5,7 @@ All search parameters live here — managed via Telegram bot commands.
 Replaces config.json for runtime configuration.
 """
 
+from typing import Optional
 import sqlite3
 import json
 import os
@@ -105,7 +106,7 @@ def remove_city(name: str):
     conn.close()
 
 
-def get_cities() -> list[dict]:
+def get_cities() -> list:
     conn = get_conn()
     rows = conn.execute(
         'SELECT name, yad2_city_id, madlan_doc_id, max_price FROM cities WHERE active = 1'
@@ -142,7 +143,7 @@ def remove_neighborhood(city_name: str, name: str):
     conn.close()
 
 
-def get_neighborhoods(city_name: str) -> list[dict]:
+def get_neighborhoods(city_name: str) -> list:
     conn = get_conn()
     rows = conn.execute(
         'SELECT name, yad2_area_id FROM neighborhoods WHERE city_name = ? AND active = 1',
@@ -175,7 +176,7 @@ def remove_facebook_group(url: str):
     conn.close()
 
 
-def get_facebook_groups() -> list[str]:
+def get_facebook_groups() -> list:
     conn = get_conn()
     rows = conn.execute(
         'SELECT url FROM facebook_groups WHERE active = 1'

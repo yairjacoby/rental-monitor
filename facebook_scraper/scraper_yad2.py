@@ -9,6 +9,7 @@ import logging
 import hashlib
 import time
 import requests
+from typing import Optional
 from seen_store import is_seen, mark_seen
 from config_store import get_cities, get_neighborhoods, get_filter
 
@@ -28,7 +29,7 @@ HEADERS = {
 }
 
 
-def resolve_city_id(city_name: str) -> str | None:
+def resolve_city_id(city_name: str) -> Optional[str]:
     """Resolve a Hebrew city name to a Yad2 numeric city ID via autocomplete API."""
     try:
         resp = requests.get(
@@ -51,7 +52,7 @@ def resolve_city_id(city_name: str) -> str | None:
         return None
 
 
-def resolve_area_id(city_id: str, neighborhood_name: str) -> str | None:
+def resolve_area_id(city_id: str, neighborhood_name: str) -> Optional[str]:
     """Resolve a neighborhood name to a Yad2 area ID."""
     try:
         resp = requests.get(
@@ -81,7 +82,7 @@ def make_listing_id(listing: dict) -> str:
 
 
 def fetch_listings(city_id: str, area_id: str = None,
-                   min_rooms: float = 4, max_price: int = None) -> list[dict]:
+                   min_rooms: float = 4, max_price: int = None) -> list:
     """Fetch raw listings from Yad2 API for one city/area combination."""
     params = {
         'city': city_id,
@@ -131,7 +132,7 @@ def parse_listing(raw: dict, city_name: str) -> dict:
     }
 
 
-def scrape_yad2() -> list[dict]:
+def scrape_yad2() -> list:
     """
     Main entry point. Scrapes all configured cities and neighborhoods.
     Returns list of new matching listings not seen before.

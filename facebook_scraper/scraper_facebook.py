@@ -10,6 +10,7 @@ import time
 import random
 from datetime import datetime, timezone
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
+from typing import Optional
 from seen_store import is_seen, mark_seen
 
 log = logging.getLogger(__name__)
@@ -36,7 +37,7 @@ def is_login_wall(page_text: str) -> bool:
     return any(signal in lower for signal in LOGIN_WALL_SIGNALS)
 
 
-def scrape_group(page, group_url: str) -> list[dict]:
+def scrape_group(page, group_url: str) -> list:
     """Scrape one public Facebook group. Returns list of raw post dicts."""
     posts = []
     try:
@@ -103,7 +104,7 @@ def scrape_group(page, group_url: str) -> list[dict]:
     return posts
 
 
-def scrape_all_groups(config: dict) -> list[dict]:
+def scrape_all_groups(config: dict) -> list:
     """Scrape all configured Facebook groups. Returns all new posts."""
     group_urls = config.get('facebook_groups', [])
     if not group_urls:
