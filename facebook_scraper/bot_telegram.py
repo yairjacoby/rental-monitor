@@ -517,6 +517,12 @@ async def cmd_skip(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await handle_message(update, context)
 
 
+@owner_only
+async def cmd_search_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    update.message.text = '/search_groups'
+    await handle_message(update, context)
+
+
 # ── Bot startup ───────────────────────────────────────────────────────────────
 
 def build_bot() -> Application:
@@ -536,6 +542,7 @@ def build_bot() -> Application:
     app.add_handler(CommandHandler('cancel', cmd_cancel))
     app.add_handler(CommandHandler('done', cmd_done))
     app.add_handler(CommandHandler('skip', cmd_skip))
+    app.add_handler(CommandHandler('search_groups', cmd_search_groups))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     return app
