@@ -15,7 +15,7 @@ from seen_store import is_seen, mark_seen
 
 log = logging.getLogger(__name__)
 
-SCROLL_ROUNDS = 5          # how many times to scroll down per group
+SCROLL_ROUNDS = 12         # how many times to scroll down per group
 SCROLL_PAUSE = 2.0         # seconds between scrolls
 POST_LIMIT = 20            # max posts to collect per group per cycle
 LOGIN_WALL_SIGNALS = [
@@ -43,7 +43,15 @@ def scrape_group(page, group_url: str) -> list:
     try:
         log.info(f'Scraping group: {group_url}')
         page.goto(group_url, wait_until='domcontentloaded', timeout=30000)
-        time.sleep(random.uniform(3.0, 4.0))
+        time.sleep(random.uniform(2.0, 3.0))
+
+        # Switch to recent posts if we landed on a real group page
+        current_url = page.url
+        if 'facebook.com' in current_url and 'login' not in current_url:
+            sorting_url = group_url.rstrip('/') + '/?sorting=RECENT'
+            if current_url != sorting_url:
+                page.goto(sorting_url, wait_until='domcontentloaded', timeout=30000)
+                time.sleep(random.uniform(2.0, 3.0))
 
         page_text = page.inner_text('body')
 

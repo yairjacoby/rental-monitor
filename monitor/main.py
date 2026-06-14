@@ -20,6 +20,26 @@ from config_store import get_facebook_groups
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'))
 
+
+def send_expansion_suggestion(city_name: str):
+    """Send a Telegram message suggesting to expand search when no listings found."""
+    import requests
+    token = os.environ.get('TELEGRAM_BOT_TOKEN')
+    chat_id = os.environ.get('TELEGRAM_CHAT_ID')
+    if not token or not chat_id:
+        return
+    message = (
+        f"🔍 לא נמצאו דירות חדשות בשכונות המוגדרות ב{city_name}.\n"
+        f"האם להרחיב את החיפוש לכל {city_name}?\n\n"
+        f"השתמש ב /add\\_neighborhood להוספת שכונות נוספות."
+    )
+    requests.post(
+        f'https://api.telegram.org/bot{token}/sendMessage',
+        json={'chat_id': chat_id, 'text': message, 'parse_mode': 'Markdown'},
+        timeout=10
+    )
+
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(levelname)s %(name)s — %(message)s'
@@ -38,11 +58,14 @@ def run_cycle():
 
     # ── Yad2 ──────────────────────────────────────────────────────────────────
     try:
-        yad2_listings = scrape_yad2()
+        yad2_listings, zero_result_cities = scrape_yad2()
         log.info(f'Yad2: {len(yad2_listings)} new listings')
         for listing in yad2_listings:
             send_alert(listing)
             total_sent += 1
+        # Suggest expanding search if no results found
+        for city in zero_result_cities:
+            send_expansion_suggestion(city)
     except Exception as e:
         log.error(f'Yad2 scraper error: {e}')
 

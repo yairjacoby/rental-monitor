@@ -519,8 +519,23 @@ async def cmd_skip(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @owner_only
 async def cmd_search_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    update.message.text = '/search_groups'
-    await handle_message(update, context)
+    chat_id = update.effective_chat.id
+    state = get_state(chat_id)
+    if state and state.get('flow') == 'add_city':
+        # Manually trigger the search_groups step
+        state['step'] = 'facebook_search'
+        set_state(chat_id, state)
+        # Create a fake update text and call handle_message
+        class FakeMessage:
+            text = '/search_groups'
+            async def reply_text(self, *args, **kwargs):
+                await update.message.reply_text(*args, **kwargs)
+        class FakeUpdate:
+            message = FakeMessage()
+            effective_chat = update.effective_chat
+        await handle_message(FakeUpdate(), context)
+    else:
+        await reply(update, 'Use /add\\_city first to set up a city, then search for groups.')
 
 
 # ── Bot startup ───────────────────────────────────────────────────────────────

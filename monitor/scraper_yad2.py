@@ -144,18 +144,19 @@ def parse_listing(raw: dict, city_name: str) -> dict:
     }
 
 
-def scrape_yad2() -> list:
+def scrape_yad2() -> tuple:
     """
     Main entry point. Scrapes all configured cities and neighborhoods.
-    Returns list of new matching listings not seen before.
+    Returns (new_listings, cities_with_no_results).
     """
     cities = get_cities()
     if not cities:
         log.warning('No cities configured — skipping Yad2 scrape')
-        return []
+        return [], []
 
     rooms_min = float(get_filter('rooms_min', '4'))
     new_listings = []
+    cities_with_no_results = []
 
     for city in cities:
         city_name = city['name']
@@ -169,31 +170,40 @@ def scrape_yad2() -> list:
 
         neighborhoods = get_neighborhoods(city_name)
 
-        if neighborhoods:
-            for nbhd in neighborhoods:
-                area_id = nbhd.get('yad2_area_id')
-                nbhd_name = nbhd['name']
+        # Always use area 54 for city-level search, filter by neighborhood post-fetch
+        area_id = neighborhoods[0].get('yad2_area_id') if neighborhoods else None
+        nbhd_names = [n['name'].lower().replace('שכונה ', '').replace('מתחם ', '').strip()
+                     for n in neighborhoods] if neighborhoods else []
 
-                raw_listings = fetch_listings(
-                    city_id, region_id, area_id=area_id,
-                    min_rooms=rooms_min, max_price=max_price
-                )
-                for raw in raw_listings:
-                    listing = parse_listing(raw, city_name)
-                    if not is_seen(listing['id']):
-                        mark_seen(listing['id'], source='yad2')
-                        new_listings.append(listing)
-                time.sleep(1)
-        else:
-            # No neighborhood filter — scrape whole city
-            raw_listings = fetch_listings(
-                city_id, region_id, min_rooms=rooms_min, max_price=max_price
-            )
-            for raw in raw_listings:
-                listing = parse_listing(raw, city_name)
-                if not is_seen(listing['id']):
-                    mark_seen(listing['id'], source='yad2')
-                    new_listings.append(listing)
+        raw_listings = fetch_listings(
+            city_id, region_id, area_id=area_id,
+            min_rooms=rooms_min, max_price=max_price
+        )
+
+        new_listings_this_city = []
+
+        for raw in raw_listings:
+            listing = parse_listing(raw, city_name)
+
+            # Strict neighborhood filter — skip if neighborhood unknown or doesn't match
+            if nbhd_names:
+                listing_nbhd = listing.get('neighborhood', '').lower().strip()
+                if not listing_nbhd:
+                    log.debug('Skipping listing — neighborhood not specified by Yad2')
+                    continue
+                listing_nbhd_clean = listing_nbhd.replace('שכונה ', '').replace('מתחם ', '').strip()
+                if not any(n in listing_nbhd_clean or listing_nbhd_clean in n
+                           for n in nbhd_names):
+                    log.debug(f'Skipping {listing_nbhd} — not in {nbhd_names}')
+                    continue
+
+            if not is_seen(listing['id']):
+                mark_seen(listing['id'], source='yad2')
+                new_listings.append(listing)
+                new_listings_this_city.append(listing)
+
+        if not new_listings_this_city:
+            cities_with_no_results.append(city_name)
 
     log.info(f'Yad2: {len(new_listings)} new listings')
-    return new_listings
+    return new_listings, cities_with_no_results
