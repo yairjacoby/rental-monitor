@@ -13,7 +13,7 @@ import logging
 
 log = logging.getLogger(__name__)
 
-DB_PATH = os.path.join(os.path.dirname(__file__), 'seen_listings.db')
+DB_PATH = os.environ.get('DB_PATH', os.path.join(os.path.dirname(__file__), 'seen_listings.db'))
 
 
 def get_conn():
