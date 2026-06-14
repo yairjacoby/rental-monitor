@@ -76,6 +76,10 @@ def scrape_group(page, group_url: str) -> list:
                     if href:
                         post_url = href if href.startswith('http') else f'https://www.facebook.com{href}'
 
+                # Skip comments — they have comment_id in URL
+                if post_url and 'comment_id=' in post_url:
+                    continue
+
                 post_id = make_post_id(group_url, text)
 
                 if is_seen(post_id):

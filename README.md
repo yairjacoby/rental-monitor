@@ -1,6 +1,6 @@
 # 🏠 Rental Monitor — Israel
 
-Real-time rental apartment monitor for Israel. Monitors Yad2, Madlan, and public Facebook groups every 15 minutes. Sends Telegram alerts within minutes of a new listing being posted.
+Real-time rental apartment monitor for Israel. Monitors Yad2 and public Facebook groups every 15 minutes. Sends Telegram alerts within minutes of a new listing being posted.
 
 Built because listings disappear within hours — native Yad2 alerts are too slow, and Facebook groups have no native alerts at all.
 
@@ -9,7 +9,6 @@ Built because listings disappear within hours — native Yad2 alerts are too slo
 ## What It Does
 
 - Monitors Yad2 every 15 minutes via their internal JSON API (no browser needed)
-- Monitors Madlan every 15 minutes via Playwright (server-side rendered, no public API)
 - Monitors public Facebook rental groups every 15 minutes via Playwright
 - Uses Claude API to parse unstructured Hebrew text from Facebook posts
 - Filters by city, neighborhood, rooms, price, and must-haves (parking, safe room)
@@ -25,8 +24,6 @@ Python Service (Railway)
 ├── APScheduler — fires every 15 minutes
 
 ├── scraper_yad2.py — HTTP requests to Yad2 internal API (gw.yad2.co.il)
-
-├── scraper_madlan.py — Playwright scraper (SSR, no public API)
 
 ├── scraper_facebook.py — Playwright scraper (public groups, no login)
 
@@ -112,7 +109,7 @@ All changes require confirmation — bot asks you to reply `/confirm` or `/cance
 | Tool | Role |
 |---|---|
 | Python + requests | Yad2 API polling (no browser needed) |
-| Python + Playwright | Madlan + Facebook scraping (headless Chromium) |
+| Python + Playwright | Facebook scraping (headless Chromium) |
 | Claude API (claude-sonnet-4-6) | Hebrew free-text parsing for Facebook posts |
 | APScheduler | Runs every 15 minutes inside the Python process |
 | python-telegram-bot | Alerts + bot command handling |

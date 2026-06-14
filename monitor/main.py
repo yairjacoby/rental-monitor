@@ -12,7 +12,6 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from seen_store import init_db
 from config_store import init_config_db, is_paused, get_config_summary
 from scraper_yad2 import scrape_yad2
-from scraper_madlan import scrape_madlan
 from scraper_facebook import scrape_all_groups
 from parser_claude import parse_listings
 from notifier_telegram import send_alert
@@ -46,16 +45,6 @@ def run_cycle():
             total_sent += 1
     except Exception as e:
         log.error(f'Yad2 scraper error: {e}')
-
-    # ── Madlan ────────────────────────────────────────────────────────────────
-    try:
-        madlan_listings = scrape_madlan()
-        log.info(f'Madlan: {len(madlan_listings)} new listings')
-        for listing in madlan_listings:
-            send_alert(listing)
-            total_sent += 1
-    except Exception as e:
-        log.error(f'Madlan scraper error: {e}')
 
     # ── Facebook ──────────────────────────────────────────────────────────────
     try:

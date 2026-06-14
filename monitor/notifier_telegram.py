@@ -16,14 +16,30 @@ TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 
 def format_message(listing: dict) -> str:
     """Format a matched listing into a Telegram message."""
-    parsed = listing.get('parsed', {})
     source = listing.get('source', 'unknown').capitalize()
 
-    # Location line
-    city = parsed.get('city') or ''
-    neighborhood = parsed.get('neighborhood') or ''
-    if city and neighborhood:
+    # Yad2 and Madlan have direct fields
+    # Facebook has nested 'parsed' dict
+    parsed = listing.get('parsed', {})
+
+    price = listing.get('price') or parsed.get('price')
+    rooms = listing.get('rooms') or parsed.get('rooms')
+    parking = listing.get('parking') if listing.get('parking') is not None else parsed.get('parking')
+    safe_room = listing.get('safe_room') if listing.get('safe_room') is not None else parsed.get('safe_room')
+    entry_date = listing.get('entry_date') or parsed.get('entry_date')
+    summary = parsed.get('summary', '')
+    post_url = listing.get('post_url', '')
+    image_url = listing.get('image_url', '')
+
+    # Location — combine available fields
+    city = listing.get('city') or parsed.get('city') or ''
+    neighborhood = listing.get('neighborhood') or parsed.get('neighborhood') or ''
+    street = listing.get('street') or parsed.get('street') or ''
+
+    if neighborhood and city:
         location = f"{city}, {neighborhood}"
+    elif street and city:
+        location = f"{city}, {street}"
     elif city:
         location = city
     elif neighborhood:
@@ -32,15 +48,16 @@ def format_message(listing: dict) -> str:
         location = 'Location not specified'
 
     # Price
-    price = parsed.get('price')
     price_line = f"💰 {price:,} ₪/month" if price else "💰 Price not specified"
 
     # Rooms
-    rooms = parsed.get('rooms')
-    rooms_line = f"🛏 {rooms} rooms" if rooms else "🛏 Rooms not specified"
+    if rooms:
+        rooms_display = int(rooms) if rooms == int(rooms) else rooms
+        rooms_line = f"🛏 {rooms_display} rooms"
+    else:
+        rooms_line = "🛏 Rooms not specified"
 
     # Parking
-    parking = parsed.get('parking')
     if parking is True:
         parking_line = "🚗 Parking: ✅"
     elif parking is False:
@@ -49,7 +66,6 @@ def format_message(listing: dict) -> str:
         parking_line = "🚗 Parking: not specified"
 
     # Safe room
-    safe_room = parsed.get('safe_room')
     if safe_room is True:
         safe_room_line = "🛡 Safe room: ✅"
     elif safe_room is False:
@@ -57,19 +73,19 @@ def format_message(listing: dict) -> str:
     else:
         safe_room_line = "🛡 Safe room: not specified"
 
+    # Street
+    street_line = f"📍 {street}" if street else ""
+
     # Entry date
-    entry_date = parsed.get('entry_date')
     entry_line = f"📅 Entry: {entry_date}" if entry_date else ""
 
     # Summary
-    summary = parsed.get('summary', '')
     summary_line = f'"{summary}"' if summary else ""
 
-    # Post link
-    post_url = listing.get('post_url', '')
-    link_line = f"👉 [View post]({post_url})" if post_url else ""
+    # Link
+    link_line = f"👉 [View listing]({post_url})" if post_url else ""
 
-    # Assemble message
+    # Assemble
     lines = [
         f"🏠 New Rental — {location}",
         f"📡 Source: {source}",
@@ -79,6 +95,9 @@ def format_message(listing: dict) -> str:
         parking_line,
         safe_room_line,
     ]
+
+    if street_line:
+        lines.append(street_line)
 
     if entry_line:
         lines.append(entry_line)

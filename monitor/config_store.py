@@ -83,6 +83,13 @@ def init_config_db():
     if 'yad2_region_id' not in cols:
         conn.execute('ALTER TABLE cities ADD COLUMN yad2_region_id TEXT')
 
+    # Migration — add madlan_slug to neighborhoods if not exists
+    try:
+        conn.execute('ALTER TABLE neighborhoods ADD COLUMN madlan_slug TEXT')
+        conn.commit()
+    except Exception:
+        pass  # Column already exists
+
     conn.commit()
     conn.close()
     log.info('Config DB initialized')
@@ -128,15 +135,16 @@ def get_cities() -> list:
 
 # ── Neighborhoods ─────────────────────────────────────────────────────────────
 
-def add_neighborhood(city_name: str, name: str, yad2_area_id: str = None):
+def add_neighborhood(city_name: str, name: str, yad2_area_id: str = None, madlan_slug: str = None):
     conn = get_conn()
     conn.execute('''
-        INSERT INTO neighborhoods (city_name, name, yad2_area_id)
-        VALUES (?, ?, ?)
+        INSERT INTO neighborhoods (city_name, name, yad2_area_id, madlan_slug)
+        VALUES (?, ?, ?, ?)
         ON CONFLICT(city_name, name) DO UPDATE SET
             yad2_area_id = excluded.yad2_area_id,
+            madlan_slug = excluded.madlan_slug,
             active = 1
-    ''', (city_name, name, yad2_area_id))
+    ''', (city_name, name, yad2_area_id, madlan_slug))
     conn.commit()
     conn.close()
 
@@ -154,11 +162,11 @@ def remove_neighborhood(city_name: str, name: str):
 def get_neighborhoods(city_name: str) -> list:
     conn = get_conn()
     rows = conn.execute(
-        'SELECT name, yad2_area_id FROM neighborhoods WHERE city_name = ? AND active = 1',
+        'SELECT name, yad2_area_id, madlan_slug FROM neighborhoods WHERE city_name = ? AND active = 1',
         (city_name,)
     ).fetchall()
     conn.close()
-    return [{'name': r[0], 'yad2_area_id': r[1]} for r in rows]
+    return [{'name': r[0], 'yad2_area_id': r[1], 'madlan_slug': r[2]} for r in rows]
 
 
 # ── Facebook Groups ───────────────────────────────────────────────────────────
