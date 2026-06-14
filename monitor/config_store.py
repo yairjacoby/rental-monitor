@@ -28,6 +28,7 @@ def init_config_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL UNIQUE,
             yad2_city_id TEXT,
+            yad2_region_id TEXT,
             madlan_doc_id TEXT,
             max_price INTEGER,
             active INTEGER DEFAULT 1
@@ -77,6 +78,11 @@ def init_config_db():
         ('paused', 'false')
     )
 
+    # Migrations — add columns that may be missing from older DBs
+    cols = [row[1] for row in conn.execute('PRAGMA table_info(cities)').fetchall()]
+    if 'yad2_region_id' not in cols:
+        conn.execute('ALTER TABLE cities ADD COLUMN yad2_region_id TEXT')
+
     conn.commit()
     conn.close()
     log.info('Config DB initialized')
@@ -84,17 +90,19 @@ def init_config_db():
 
 # ── Cities ────────────────────────────────────────────────────────────────────
 
-def add_city(name: str, yad2_city_id: str = None, madlan_doc_id: str = None, max_price: int = None):
+def add_city(name: str, yad2_city_id: str = None, yad2_region_id: str = None,
+             madlan_doc_id: str = None, max_price: int = None):
     conn = get_conn()
     conn.execute('''
-        INSERT INTO cities (name, yad2_city_id, madlan_doc_id, max_price)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO cities (name, yad2_city_id, yad2_region_id, madlan_doc_id, max_price)
+        VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(name) DO UPDATE SET
             yad2_city_id = excluded.yad2_city_id,
+            yad2_region_id = excluded.yad2_region_id,
             madlan_doc_id = excluded.madlan_doc_id,
             max_price = excluded.max_price,
             active = 1
-    ''', (name, yad2_city_id, madlan_doc_id, max_price))
+    ''', (name, yad2_city_id, yad2_region_id, madlan_doc_id, max_price))
     conn.commit()
     conn.close()
 
@@ -109,11 +117,11 @@ def remove_city(name: str):
 def get_cities() -> list:
     conn = get_conn()
     rows = conn.execute(
-        'SELECT name, yad2_city_id, madlan_doc_id, max_price FROM cities WHERE active = 1'
+        'SELECT name, yad2_city_id, yad2_region_id, madlan_doc_id, max_price FROM cities WHERE active = 1'
     ).fetchall()
     conn.close()
     return [
-        {'name': r[0], 'yad2_city_id': r[1], 'madlan_doc_id': r[2], 'max_price': r[3]}
+        {'name': r[0], 'yad2_city_id': r[1], 'yad2_region_id': r[2], 'madlan_doc_id': r[3], 'max_price': r[4]}
         for r in rows
     ]
 

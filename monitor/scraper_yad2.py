@@ -77,14 +77,26 @@ def resolve_area_id(city_id: str, neighborhood_name: str) -> Optional[str]:
 
 def make_listing_id(listing: dict) -> str:
     """Stable unique ID for a Yad2 listing."""
-    raw = f"yad2_{listing.get('id', '')}_{listing.get('link_token', '')}"
+    raw = f"yad2_{listing.get('orderId', '')}_{listing.get('token', '')}"
     return hashlib.md5(raw.encode()).hexdigest()
 
 
-def fetch_listings(city_id: str, area_id: str = None,
+def _has_tag(raw: dict, keyword: str) -> Optional[bool]:
+    """Check tags array for a keyword. Returns True if found, None if not present."""
+    tags = raw.get('tags', [])
+    if not tags:
+        return None
+    for tag in tags:
+        if keyword in tag.get('name', ''):
+            return True
+    return None
+
+
+def fetch_listings(city_id: str, region_id: str, area_id: str = None,
                    min_rooms: float = 4, max_price: int = None) -> list:
     """Fetch raw listings from Yad2 API for one city/area combination."""
     params = {
+        'region': region_id,
         'city': city_id,
         'minRooms': min_rooms,
     }
@@ -109,13 +121,13 @@ def fetch_listings(city_id: str, area_id: str = None,
 
 def parse_listing(raw: dict, city_name: str) -> dict:
     """Parse a raw Yad2 marker into a normalized listing dict."""
-    rooms = raw.get('rooms')
+    details = raw.get('additionalDetails', {})
+    rooms = details.get('roomsCount')
     price = raw.get('price')
     address = raw.get('address', {})
     street = address.get('street', {}).get('text', '')
     neighborhood = address.get('neighborhood', {}).get('text', '')
-    listing_id = raw.get('id', '')
-    token = raw.get('link_token', listing_id)
+    token = raw.get('token', str(raw.get('orderId', '')))
 
     return {
         'id':           make_listing_id(raw),
@@ -125,8 +137,8 @@ def parse_listing(raw: dict, city_name: str) -> dict:
         'street':       street,
         'rooms':        float(rooms) if rooms else None,
         'price':        int(price) if price else None,
-        'parking':      raw.get('parking'),
-        'safe_room':    raw.get('safeRoom') or raw.get('safe_room'),
+        'parking':      _has_tag(raw, 'חניה'),
+        'safe_room':    _has_tag(raw, 'ממ"ד') or _has_tag(raw, 'מרחב מוגן'),
         'post_url':     f'https://www.yad2.co.il/item/{token}',
         'raw':          raw,
     }
@@ -148,18 +160,12 @@ def scrape_yad2() -> list:
     for city in cities:
         city_name = city['name']
         city_id = city.get('yad2_city_id')
+        region_id = city.get('yad2_region_id')
         max_price = city.get('max_price')
 
-        # Auto-resolve city ID if not stored
-        if not city_id:
-            log.info(f'Resolving Yad2 city ID for {city_name}...')
-            city_id = resolve_city_id(city_name)
-            if not city_id:
-                log.warning(f'Skipping {city_name} — could not resolve city ID')
-                continue
-            # Save resolved ID back to config
-            from config_store import add_city
-            add_city(city_name, yad2_city_id=city_id, max_price=max_price)
+        if not city_id or not region_id:
+            log.warning(f'Skipping {city_name} — yad2_city_id or yad2_region_id not set')
+            continue
 
         neighborhoods = get_neighborhoods(city_name)
 
@@ -168,15 +174,8 @@ def scrape_yad2() -> list:
                 area_id = nbhd.get('yad2_area_id')
                 nbhd_name = nbhd['name']
 
-                if not area_id:
-                    log.info(f'Resolving area ID for {nbhd_name}...')
-                    area_id = resolve_area_id(city_id, nbhd_name)
-                    if area_id:
-                        from config_store import add_neighborhood
-                        add_neighborhood(city_name, nbhd_name, yad2_area_id=area_id)
-
                 raw_listings = fetch_listings(
-                    city_id, area_id=area_id,
+                    city_id, region_id, area_id=area_id,
                     min_rooms=rooms_min, max_price=max_price
                 )
                 for raw in raw_listings:
@@ -188,7 +187,7 @@ def scrape_yad2() -> list:
         else:
             # No neighborhood filter — scrape whole city
             raw_listings = fetch_listings(
-                city_id, min_rooms=rooms_min, max_price=max_price
+                city_id, region_id, min_rooms=rooms_min, max_price=max_price
             )
             for raw in raw_listings:
                 listing = parse_listing(raw, city_name)

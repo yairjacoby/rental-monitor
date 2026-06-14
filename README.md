@@ -158,7 +158,7 @@ Never commit `.env` — it is in `.gitignore`.
 ## Setup
 
 ```bash
-cd facebook_scraper
+cd monitor
 pip install -r requirements.txt
 playwright install chromium
 cp ../.env.example ../.env
@@ -179,7 +179,7 @@ rental-monitor/
 
 ├── README.md
 
-└── facebook_scraper/
+└── monitor/
 
 ├── main.py               # scheduler + orchestrator
 
