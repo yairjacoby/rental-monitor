@@ -513,8 +513,36 @@ async def cmd_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @owner_only
 async def cmd_skip(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    update.message.text = '/skip'
-    await handle_message(update, context)
+    chat_id = update.effective_chat.id
+    state = get_state(chat_id)
+    if not state:
+        await reply(update, 'Nothing in progress.')
+        return
+
+    flow = state.get('flow')
+    step = state.get('step')
+    data = state.setdefault('data', {})
+
+    if flow == 'add_city':
+        if step == 'max_price':
+            state['step'] = 'rooms'
+            set_state(chat_id, state)
+            await reply(update, 'Min number of rooms? (e.g. 4 or 3.5)')
+
+        elif step == 'neighborhood':
+            state['step'] = 'must_have'
+            set_state(chat_id, state)
+            await reply(update, 'Must-haves?\n\n1. Parking\n2. Safe room ממ"ד\n3. Both\n4. Neither')
+
+        elif step in ('facebook_search', 'facebook_pick', 'facebook_manual'):
+            state['step'] = 'confirm'
+            set_state(chat_id, state)
+            await cmd_done(update, context)
+
+        else:
+            await reply(update, 'Nothing to skip here.')
+    else:
+        await reply(update, 'Nothing to skip.')
 
 
 @owner_only
