@@ -275,6 +275,16 @@ async def handle_confirmation(update: Update, state: dict):
         clear_state(chat_id)
         await reply(update, '✅ Monitoring resumed.')
 
+    elif flow == 'add_group_manual':
+        url = data.get('url') or state.get('data', {}).get('url', '')
+        if url:
+            add_facebook_group(url)
+            clear_state(chat_id)
+            await reply(update, f"✅ Facebook group added.\n{url}")
+        else:
+            clear_state(chat_id)
+            await reply(update, "❌ No URL found — please try /add\\_group again.")
+
 
 # ── Message handler — routes conversation steps ───────────────────────────────
 
@@ -448,6 +458,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if step == 'url':
             if text.startswith('http') and 'facebook.com' in text:
                 data['url'] = text
+                state['data'] = data
                 state['step'] = 'confirm'
                 set_state(chat_id, state)
                 await reply(update, f'Add group:\n`{text}`?\n/confirm or /cancel')
