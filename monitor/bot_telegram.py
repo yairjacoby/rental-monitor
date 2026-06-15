@@ -342,6 +342,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
         elif step == 'facebook_search':
+            if text in ('/skip', 'skip'):
+                state['step'] = 'confirm'
+                set_state(chat_id, state)
+                await cmd_done(update, context)
+                return
             if text == '/search_groups':
                 await reply(update, f'Searching for Facebook groups in {data["city_name"]}...')
                 groups = search_facebook_groups(data['city_name'])
@@ -535,7 +540,8 @@ async def cmd_skip(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await reply(update, 'Must-haves?\n\n1. Parking\n2. Safe room ממ"ד\n3. Both\n4. Neither')
 
         elif step in ('facebook_search', 'facebook_pick', 'facebook_manual'):
-            state['step'] = 'confirm'
+            data['facebook_groups'] = data.get('facebook_groups', [])
+            state['step'] = 'facebook_manual'
             set_state(chat_id, state)
             await cmd_done(update, context)
 
