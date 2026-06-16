@@ -1,28 +1,46 @@
-import sqlite3
-import os
+"""
+Seen Store — Supabase backed
+Tracks listing IDs already sent to prevent duplicate alerts.
+"""
 
-DB_PATH = os.environ.get('DB_PATH', os.path.join(os.path.dirname(__file__), 'seen_listings.db'))
+import os
+import logging
+
+log = logging.getLogger(__name__)
+
+_client = None
+
+def get_client():
+    global _client
+    if _client is None:
+        from supabase import create_client
+        url = os.environ.get('SUPABASE_URL')
+        key = os.environ.get('SUPABASE_KEY')
+        if not url or not key:
+            raise ValueError('SUPABASE_URL and SUPABASE_KEY must be set')
+        _client = create_client(url, key)
+    return _client
+
 
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute('''
-        CREATE TABLE IF NOT EXISTS seen (
-            id TEXT PRIMARY KEY,
-            source TEXT,
-            seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    conn.commit()
-    conn.close()
+    """No-op — tables created via SQL migration in Supabase."""
+    log.info('Supabase seen store ready')
+
 
 def is_seen(listing_id: str) -> bool:
-    conn = sqlite3.connect(DB_PATH)
-    row = conn.execute('SELECT 1 FROM seen WHERE id = ?', (listing_id,)).fetchone()
-    conn.close()
-    return row is not None
+    try:
+        result = get_client().table('seen').select('id').eq('id', listing_id).execute()
+        return len(result.data) > 0
+    except Exception as e:
+        log.error(f'is_seen error: {e}')
+        return False
 
-def mark_seen(listing_id: str, source: str = 'facebook'):
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute('INSERT OR IGNORE INTO seen (id, source) VALUES (?, ?)', (listing_id, source))
-    conn.commit()
-    conn.close()
+
+def mark_seen(listing_id: str, source: str = 'unknown'):
+    try:
+        get_client().table('seen').upsert({
+            'id': listing_id,
+            'source': source
+        }).execute()
+    except Exception as e:
+        log.error(f'mark_seen error: {e}')

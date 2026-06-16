@@ -1,258 +1,189 @@
 """
-Config Store
-SQLite-backed configuration manager.
-All search parameters live here — managed via Telegram bot commands.
-Replaces config.json for runtime configuration.
+Config Store — Supabase backed
+All configuration persists in Supabase PostgreSQL.
+Survives Railway restarts and redeploys.
 """
 
-from typing import Optional
-import sqlite3
-import json
 import os
 import logging
+from typing import Optional
 
 log = logging.getLogger(__name__)
 
-DB_PATH = os.environ.get('DB_PATH', os.path.join(os.path.dirname(__file__), 'seen_listings.db'))
+_client = None
 
 
-def get_conn():
-    return sqlite3.connect(DB_PATH)
+def get_client():
+    global _client
+    if _client is None:
+        from supabase import create_client
+        url = os.environ.get('SUPABASE_URL')
+        key = os.environ.get('SUPABASE_KEY')
+        if not url or not key:
+            raise ValueError('SUPABASE_URL and SUPABASE_KEY must be set')
+        _client = create_client(url, key)
+    return _client
 
 
 def init_config_db():
-    """Create config tables if they don't exist."""
-    conn = get_conn()
-    conn.executescript('''
-        CREATE TABLE IF NOT EXISTS cities (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL UNIQUE,
-            yad2_city_id TEXT,
-            yad2_region_id TEXT,
-            madlan_doc_id TEXT,
-            max_price INTEGER,
-            active INTEGER DEFAULT 1
-        );
-
-        CREATE TABLE IF NOT EXISTS neighborhoods (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            city_name TEXT NOT NULL,
-            name TEXT NOT NULL,
-            yad2_area_id TEXT,
-            active INTEGER DEFAULT 1,
-            UNIQUE(city_name, name)
-        );
-
-        CREATE TABLE IF NOT EXISTS facebook_groups (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            url TEXT NOT NULL UNIQUE,
-            active INTEGER DEFAULT 1
-        );
-
-        CREATE TABLE IF NOT EXISTS filters (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS monitor_state (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL
-        );
-    ''')
-
-    # Default filters if not set
-    defaults = {
-        'rooms_min': '4',
-        'must_have_parking': 'true',
-        'must_have_safe_room': 'true',
-    }
-    for key, value in defaults.items():
-        conn.execute(
-            'INSERT OR IGNORE INTO filters (key, value) VALUES (?, ?)',
-            (key, value)
-        )
-
-    # Default monitor state
-    conn.execute(
-        'INSERT OR IGNORE INTO monitor_state (key, value) VALUES (?, ?)',
-        ('paused', 'false')
-    )
-
-    # Migrations — add columns that may be missing from older DBs
-    cols = [row[1] for row in conn.execute('PRAGMA table_info(cities)').fetchall()]
-    if 'yad2_region_id' not in cols:
-        conn.execute('ALTER TABLE cities ADD COLUMN yad2_region_id TEXT')
-
-    # Migration — add madlan_slug to neighborhoods if not exists
-    try:
-        conn.execute('ALTER TABLE neighborhoods ADD COLUMN madlan_slug TEXT')
-        conn.commit()
-    except Exception:
-        pass  # Column already exists
-
-    conn.commit()
-    conn.close()
-    log.info('Config DB initialized')
+    """No-op — tables created via SQL migration in Supabase."""
+    log.info('Supabase config store ready')
 
 
 # ── Cities ────────────────────────────────────────────────────────────────────
 
 def add_city(name: str, yad2_city_id: str = None, yad2_region_id: str = None,
              madlan_doc_id: str = None, max_price: int = None):
-    conn = get_conn()
-    conn.execute('''
-        INSERT INTO cities (name, yad2_city_id, yad2_region_id, madlan_doc_id, max_price)
-        VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT(name) DO UPDATE SET
-            yad2_city_id = excluded.yad2_city_id,
-            yad2_region_id = excluded.yad2_region_id,
-            madlan_doc_id = excluded.madlan_doc_id,
-            max_price = excluded.max_price,
-            active = 1
-    ''', (name, yad2_city_id, yad2_region_id, madlan_doc_id, max_price))
-    conn.commit()
-    conn.close()
+    try:
+        get_client().table('cities').upsert({
+            'name': name,
+            'yad2_city_id': yad2_city_id,
+            'yad2_region_id': yad2_region_id,
+            'madlan_doc_id': madlan_doc_id,
+            'max_price': max_price,
+            'active': True
+        }, on_conflict='name').execute()
+    except Exception as e:
+        log.error(f'add_city error: {e}')
 
 
 def remove_city(name: str):
-    conn = get_conn()
-    conn.execute('UPDATE cities SET active = 0 WHERE name = ?', (name,))
-    conn.commit()
-    conn.close()
+    try:
+        get_client().table('cities').update({'active': False}).eq('name', name).execute()
+    except Exception as e:
+        log.error(f'remove_city error: {e}')
 
 
 def get_cities() -> list:
-    conn = get_conn()
-    rows = conn.execute(
-        'SELECT name, yad2_city_id, yad2_region_id, madlan_doc_id, max_price FROM cities WHERE active = 1'
-    ).fetchall()
-    conn.close()
-    return [
-        {'name': r[0], 'yad2_city_id': r[1], 'yad2_region_id': r[2], 'madlan_doc_id': r[3], 'max_price': r[4]}
-        for r in rows
-    ]
+    try:
+        result = get_client().table('cities').select('*').eq('active', True).execute()
+        return result.data or []
+    except Exception as e:
+        log.error(f'get_cities error: {e}')
+        return []
 
 
 # ── Neighborhoods ─────────────────────────────────────────────────────────────
 
-def add_neighborhood(city_name: str, name: str, yad2_area_id: str = None, madlan_slug: str = None):
-    conn = get_conn()
-    conn.execute('''
-        INSERT INTO neighborhoods (city_name, name, yad2_area_id, madlan_slug)
-        VALUES (?, ?, ?, ?)
-        ON CONFLICT(city_name, name) DO UPDATE SET
-            yad2_area_id = excluded.yad2_area_id,
-            madlan_slug = excluded.madlan_slug,
-            active = 1
-    ''', (city_name, name, yad2_area_id, madlan_slug))
-    conn.commit()
-    conn.close()
+def add_neighborhood(city_name: str, name: str, yad2_area_id: str = None,
+                     madlan_slug: str = None):
+    try:
+        get_client().table('neighborhoods').upsert({
+            'city_name': city_name,
+            'name': name,
+            'yad2_area_id': yad2_area_id,
+            'madlan_slug': madlan_slug,
+            'active': True
+        }, on_conflict='city_name,name').execute()
+    except Exception as e:
+        log.error(f'add_neighborhood error: {e}')
 
 
 def remove_neighborhood(city_name: str, name: str):
-    conn = get_conn()
-    conn.execute(
-        'UPDATE neighborhoods SET active = 0 WHERE city_name = ? AND name = ?',
-        (city_name, name)
-    )
-    conn.commit()
-    conn.close()
+    try:
+        get_client().table('neighborhoods').update(
+            {'active': False}
+        ).eq('city_name', city_name).eq('name', name).execute()
+    except Exception as e:
+        log.error(f'remove_neighborhood error: {e}')
 
 
 def get_neighborhoods(city_name: str) -> list:
-    conn = get_conn()
-    rows = conn.execute(
-        'SELECT name, yad2_area_id, madlan_slug FROM neighborhoods WHERE city_name = ? AND active = 1',
-        (city_name,)
-    ).fetchall()
-    conn.close()
-    return [{'name': r[0], 'yad2_area_id': r[1], 'madlan_slug': r[2]} for r in rows]
+    try:
+        result = get_client().table('neighborhoods').select('*').eq(
+            'city_name', city_name).eq('active', True).execute()
+        return result.data or []
+    except Exception as e:
+        log.error(f'get_neighborhoods error: {e}')
+        return []
 
 
 # ── Facebook Groups ───────────────────────────────────────────────────────────
 
 def add_facebook_group(url: str):
-    conn = get_conn()
-    conn.execute(
-        'INSERT OR IGNORE INTO facebook_groups (url) VALUES (?)', (url,)
-    )
-    conn.execute(
-        'UPDATE facebook_groups SET active = 1 WHERE url = ?', (url,)
-    )
-    conn.commit()
-    conn.close()
+    try:
+        get_client().table('facebook_groups').upsert({
+            'url': url,
+            'active': True
+        }, on_conflict='url').execute()
+    except Exception as e:
+        log.error(f'add_facebook_group error: {e}')
 
 
 def remove_facebook_group(url: str):
-    conn = get_conn()
-    conn.execute(
-        'UPDATE facebook_groups SET active = 0 WHERE url = ?', (url,)
-    )
-    conn.commit()
-    conn.close()
+    try:
+        get_client().table('facebook_groups').update(
+            {'active': False}
+        ).eq('url', url).execute()
+    except Exception as e:
+        log.error(f'remove_facebook_group error: {e}')
 
 
 def get_facebook_groups() -> list:
-    conn = get_conn()
-    rows = conn.execute(
-        'SELECT url FROM facebook_groups WHERE active = 1'
-    ).fetchall()
-    conn.close()
-    return [r[0] for r in rows]
+    try:
+        result = get_client().table('facebook_groups').select('url').eq(
+            'active', True).execute()
+        return [r['url'] for r in (result.data or [])]
+    except Exception as e:
+        log.error(f'get_facebook_groups error: {e}')
+        return []
 
 
 # ── Filters ───────────────────────────────────────────────────────────────────
 
 def set_filter(key: str, value):
-    conn = get_conn()
-    conn.execute(
-        'INSERT OR REPLACE INTO filters (key, value) VALUES (?, ?)',
-        (key, str(value))
-    )
-    conn.commit()
-    conn.close()
+    try:
+        get_client().table('filters').upsert({
+            'key': key,
+            'value': str(value)
+        }, on_conflict='key').execute()
+    except Exception as e:
+        log.error(f'set_filter error: {e}')
 
 
 def get_filter(key: str, default=None):
-    conn = get_conn()
-    row = conn.execute(
-        'SELECT value FROM filters WHERE key = ?', (key,)
-    ).fetchone()
-    conn.close()
-    if row is None:
+    try:
+        result = get_client().table('filters').select('value').eq('key', key).execute()
+        if result.data:
+            return result.data[0]['value']
         return default
-    return row[0]
+    except Exception as e:
+        log.error(f'get_filter error: {e}')
+        return default
 
 
 def get_all_filters() -> dict:
-    conn = get_conn()
-    rows = conn.execute('SELECT key, value FROM filters').fetchall()
-    conn.close()
-    return {r[0]: r[1] for r in rows}
+    try:
+        result = get_client().table('filters').select('*').execute()
+        return {r['key']: r['value'] for r in (result.data or [])}
+    except Exception as e:
+        log.error(f'get_all_filters error: {e}')
+        return {}
 
 
 # ── Monitor State ─────────────────────────────────────────────────────────────
 
 def is_paused() -> bool:
-    conn = get_conn()
-    row = conn.execute(
-        'SELECT value FROM monitor_state WHERE key = ?', ('paused',)
-    ).fetchone()
-    conn.close()
-    return row and row[0] == 'true'
+    try:
+        result = get_client().table('monitor_state').select('value').eq(
+            'key', 'paused').execute()
+        return result.data and result.data[0]['value'] == 'true'
+    except Exception as e:
+        log.error(f'is_paused error: {e}')
+        return False
 
 
 def set_paused(paused: bool):
-    conn = get_conn()
-    conn.execute(
-        'INSERT OR REPLACE INTO monitor_state (key, value) VALUES (?, ?)',
-        ('paused', 'true' if paused else 'false')
-    )
-    conn.commit()
-    conn.close()
+    try:
+        get_client().table('monitor_state').upsert({
+            'key': 'paused',
+            'value': 'true' if paused else 'false'
+        }, on_conflict='key').execute()
+    except Exception as e:
+        log.error(f'set_paused error: {e}')
 
 
-# ── Full Config Summary ───────────────────────────────────────────────────────
+# ── Config Summary ────────────────────────────────────────────────────────────
 
 def get_config_summary() -> str:
     cities = get_cities()
@@ -270,7 +201,7 @@ def get_config_summary() -> str:
     if not cities:
         lines.append('  None configured')
     for city in cities:
-        price = f'{city["max_price"]:,} ₪' if city['max_price'] else 'no limit'
+        price = f'{city["max_price"]:,} ₪' if city.get('max_price') else 'no limit'
         neighborhoods = get_neighborhoods(city['name'])
         nbhd_str = ', '.join(n['name'] for n in neighborhoods) if neighborhoods else 'all'
         lines.append(f'  • {city["name"]} — max {price} — neighborhoods: {nbhd_str}')

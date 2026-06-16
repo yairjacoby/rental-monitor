@@ -6,3 +6,4 @@ apscheduler==3.10.4
 python-dotenv==1.2.1
 requests==2.32.5
 openpyxl==3.1.2
+supabase==2.3.0
