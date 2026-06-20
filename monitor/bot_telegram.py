@@ -146,6 +146,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 `/add_city` — add a city to monitor (guided)
 `/remove_city` — remove a city
+`/remove_neighborhood` — remove a neighborhood filter
 `/set_price` — change max price
 `/set_rooms` — change min rooms
 `/add_group` — add a Facebook group URL
@@ -186,6 +187,25 @@ async def cmd_remove_city(update: Update, context: ContextTypes.DEFAULT_TYPE):
     city_list = '\n'.join(f'{i+1}. {c["name"]}' for i, c in enumerate(cities))
     set_state(chat_id, {'flow': 'remove_city', 'step': 'pick', 'cities': cities})
     await reply(update, f'Which city to remove?\n\n{city_list}\n\nReply with the number.')
+
+
+# ── /remove_neighborhood ──────────────────────────────────────────────────────
+
+@owner_only
+async def cmd_remove_neighborhood(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from config_store import get_neighborhoods
+    cities = get_cities()
+    all_neighborhoods = []
+    for city in cities:
+        for nbhd in get_neighborhoods(city['name']):
+            all_neighborhoods.append({'city': city['name'], 'name': nbhd['name']})
+    if not all_neighborhoods:
+        await reply(update, 'No neighborhoods configured.')
+        return
+    chat_id = update.effective_chat.id
+    listing = '\n'.join(f'{i+1}. {n["name"]} ({n["city"]})' for i, n in enumerate(all_neighborhoods))
+    set_state(chat_id, {'flow': 'remove_neighborhood', 'step': 'pick', 'neighborhoods': all_neighborhoods})
+    await reply(update, f'Which neighborhood to remove?\n\n{listing}\n\nReply with the number.')
 
 
 # ── /set_price ────────────────────────────────────────────────────────────────
@@ -294,6 +314,11 @@ async def handle_confirmation(update: Update, state: dict):
         remove_city(data['city_name'])
         clear_state(chat_id)
         await reply(update, f"✅ *{data['city_name']}* removed.")
+
+    elif flow == 'remove_neighborhood':
+        remove_neighborhood(data['city_name'], data['name'])
+        clear_state(chat_id)
+        await reply(update, f"✅ Neighborhood *{data['name']}* removed from {data['city_name']}.")
 
     elif flow == 'set_price':
         set_filter('global_max_price', str(data['price']))
@@ -435,6 +460,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except (ValueError, IndexError):
                 await reply(update, 'Please reply with a valid number.')
 
+    # ── remove_neighborhood flow ───────────────────────────────────────────────
+    elif flow == 'remove_neighborhood':
+        if step == 'pick':
+            neighborhoods = state.get('neighborhoods', [])
+            try:
+                idx = int(text) - 1
+                nbhd = neighborhoods[idx]
+                data['city_name'] = nbhd['city']
+                data['name'] = nbhd['name']
+                state['step'] = 'confirm'
+                set_state(chat_id, state)
+                await reply(update, f'Remove *{nbhd["name"]}* from {nbhd["city"]}? /confirm or /cancel')
+            except (ValueError, IndexError):
+                await reply(update, 'Please reply with a valid number.')
+
     # ── set_price flow ─────────────────────────────────────────────────────────
     elif flow == 'set_price':
         if step == 'price':
@@ -572,6 +612,7 @@ def build_bot() -> Application:
     app.add_handler(CommandHandler('status', cmd_status))
     app.add_handler(CommandHandler('add_city', cmd_add_city))
     app.add_handler(CommandHandler('remove_city', cmd_remove_city))
+    app.add_handler(CommandHandler('remove_neighborhood', cmd_remove_neighborhood))
     app.add_handler(CommandHandler('set_price', cmd_set_price))
     app.add_handler(CommandHandler('set_rooms', cmd_set_rooms))
     app.add_handler(CommandHandler('add_group', cmd_add_group))

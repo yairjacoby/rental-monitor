@@ -194,12 +194,12 @@ def scrape_yad2() -> tuple:
             if nbhd_names:
                 listing_nbhd = listing.get('neighborhood', '').lower().strip()
                 if not listing_nbhd:
-                    log.debug('Skipping listing — neighborhood not specified by Yad2')
+                    log.info('Skipping listing — neighborhood not specified by Yad2')
                     continue
                 listing_nbhd_clean = listing_nbhd.replace('שכונה ', '').replace('מתחם ', '').strip()
                 if not any(n in listing_nbhd_clean or listing_nbhd_clean in n
                            for n in nbhd_names):
-                    log.debug(f'Skipping {listing_nbhd} — not in {nbhd_names}')
+                    log.info(f'Skipping {listing_nbhd} — not in {nbhd_names}')
                     continue
 
             if not is_seen(listing['id']):
@@ -207,6 +207,7 @@ def scrape_yad2() -> tuple:
                 new_listings.append(listing)
                 new_listings_this_city.append(listing)
 
+        log.info(f'{city_name}: {len(raw_listings)} raw → {len(new_listings_this_city)} passed filters')
         if not new_listings_this_city:
             cities_with_no_results.append(city_name)
 
