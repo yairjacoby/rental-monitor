@@ -42,22 +42,29 @@ def scrape_group(page, group_url: str) -> list:
     posts = []
     try:
         log.info(f'Scraping group: {group_url}')
-        page.goto(group_url, wait_until='domcontentloaded', timeout=30000)
-        time.sleep(random.uniform(2.0, 3.0))
+        page.goto(group_url, wait_until='networkidle', timeout=45000)
+        time.sleep(random.uniform(3.0, 5.0))
 
         # Switch to recent posts if we landed on a real group page
         current_url = page.url
         if 'facebook.com' in current_url and 'login' not in current_url:
             sorting_url = group_url.rstrip('/') + '/?sorting=RECENT'
             if current_url != sorting_url:
-                page.goto(sorting_url, wait_until='domcontentloaded', timeout=30000)
-                time.sleep(random.uniform(2.0, 3.0))
+                page.goto(sorting_url, wait_until='networkidle', timeout=45000)
+                time.sleep(random.uniform(3.0, 5.0))
 
         page_text = page.inner_text('body')
+        log.info(f'Page text length: {len(page_text)} chars')
 
         if is_login_wall(page_text):
             log.warning(f'Login wall detected for {group_url} — skipping')
             return []
+
+        # Wait for posts to appear before scrolling
+        try:
+            page.wait_for_selector('[role="article"]', timeout=15000)
+        except PlaywrightTimeout:
+            log.warning(f'No [role="article"] elements appeared after 15s for {group_url}')
 
         # Scroll to load more posts
         for i in range(SCROLL_ROUNDS):
@@ -65,10 +72,20 @@ def scrape_group(page, group_url: str) -> list:
             time.sleep(random.uniform(SCROLL_PAUSE, SCROLL_PAUSE + 1.0))
             log.debug(f'Scroll {i+1}/{SCROLL_ROUNDS}')
 
-        # Extract post elements
-        # Facebook posts are in [data-ad-preview="message"] or role="article"
+        # Try primary selector then fallbacks
         post_elements = page.query_selector_all('[role="article"]')
-        log.info(f'Found {len(post_elements)} post elements in {group_url}')
+        log.info(f'[role="article"]: {len(post_elements)} elements')
+
+        if not post_elements:
+            post_elements = page.query_selector_all('[data-ad-preview="message"]')
+            log.info(f'[data-ad-preview="message"]: {len(post_elements)} elements')
+
+        if not post_elements:
+            # Last resort: grab any div with substantial Hebrew text via JS
+            post_elements = page.query_selector_all('div[dir="rtl"]')
+            log.info(f'div[dir="rtl"] fallback: {len(post_elements)} elements')
+
+        log.info(f'Total post elements found: {len(post_elements)} in {group_url}')
 
         for el in post_elements[:POST_LIMIT]:
             try:

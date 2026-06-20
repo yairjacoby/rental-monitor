@@ -25,6 +25,30 @@ from config_store import (
 
 log = logging.getLogger(__name__)
 
+YAD2_CITIES = {
+    'הוד השרון': {'city_id': '9700', 'region_id': '1'},
+    'תל אביב': {'city_id': '5000', 'region_id': '3'},
+    'ירושלים': {'city_id': '3000', 'region_id': '6'},
+    'חיפה': {'city_id': '4000', 'region_id': '7'},
+    'ראשון לציון': {'city_id': '8300', 'region_id': '3'},
+    'פתח תקווה': {'city_id': '7900', 'region_id': '1'},
+    'נתניה': {'city_id': '7400', 'region_id': '5'},
+    'באר שבע': {'city_id': '1200', 'region_id': '2'},
+    'רמת גן': {'city_id': '8600', 'region_id': '3'},
+    'אשדוד': {'city_id': '70', 'region_id': '2'},
+    'חולון': {'city_id': '6100', 'region_id': '3'},
+    'בני ברק': {'city_id': '2400', 'region_id': '3'},
+    'רחובות': {'city_id': '8400', 'region_id': '3'},
+    'כפר סבא': {'city_id': '6900', 'region_id': '1'},
+    'הרצליה': {'city_id': '6600', 'region_id': '1'},
+    'רעננה': {'city_id': '8700', 'region_id': '1'},
+    'מודיעין': {'city_id': '1020', 'region_id': '1'},
+    'אשקלון': {'city_id': '300', 'region_id': '2'},
+    'עפולה': {'city_id': '7700', 'region_id': '7'},
+    'נצרת עילית': {'city_id': '7500', 'region_id': '7'},
+    'גבעתיים': {'city_id': '6200', 'region_id': '3'},
+}
+
 TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
 TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY')
@@ -241,6 +265,8 @@ async def handle_confirmation(update: Update, state: dict):
     if flow == 'add_city':
         add_city(
             data['city_name'],
+            yad2_city_id=data.get('yad2_city_id'),
+            yad2_region_id=data.get('yad2_region_id'),
             max_price=data.get('max_price')
         )
         if data.get('neighborhood'):
@@ -307,6 +333,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if step == 'city_name':
             data['city_name'] = text
+            yad2_info = YAD2_CITIES.get(text, {})
+            data['yad2_city_id'] = yad2_info.get('city_id')
+            data['yad2_region_id'] = yad2_info.get('region_id')
             state['step'] = 'max_price'
             set_state(chat_id, state)
             await reply(update, f'*{text}* — got it.\n\nMax price in NIS? (or /skip for no limit)')
