@@ -134,6 +134,14 @@ def parse_listing(raw: dict, city_name: str) -> dict:
     neighborhood = address.get('neighborhood', {}).get('text', '')
     token = raw.get('token', str(raw.get('orderId', '')))
 
+    images = raw.get('images', [])
+    image_url = ''
+    if images and isinstance(images, list):
+        first = images[0]
+        image_url = first.get('src', '') or first.get('url', '') or first.get('thumbnail', '')
+    if not image_url:
+        image_url = raw.get('thumbnail', '') or raw.get('imageUrl', '')
+
     return {
         'id':           make_listing_id(raw),
         'source':       'yad2',
@@ -145,6 +153,7 @@ def parse_listing(raw: dict, city_name: str) -> dict:
         'parking':      _has_tag(raw, 'חניה'),
         'safe_room':    _has_tag(raw, 'ממ"ד') or _has_tag(raw, 'מרחב מוגן'),
         'post_url':     f'https://www.yad2.co.il/item/{token}',
+        'image_url':    image_url,
         'raw':          raw,
     }
 

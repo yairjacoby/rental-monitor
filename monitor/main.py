@@ -21,9 +21,25 @@ from config_store import get_facebook_groups
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'))
 
 
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(levelname)s %(name)s — %(message)s'
+)
+log = logging.getLogger(__name__)
+
+_expansion_cooldown = {}  # city_name -> datetime of last send
+
+
 def send_expansion_suggestion(city_name: str):
     """Send a Telegram message suggesting to expand search when no listings found."""
-    import requests
+    import datetime
+    import requests as _requests
+    now = datetime.datetime.now()
+    last = _expansion_cooldown.get(city_name)
+    if last and (now - last).total_seconds() < 6 * 3600:
+        log.debug(f'Expansion suggestion for {city_name} suppressed (cooldown)')
+        return
+    _expansion_cooldown[city_name] = now
     token = os.environ.get('TELEGRAM_BOT_TOKEN')
     chat_id = os.environ.get('TELEGRAM_CHAT_ID')
     if not token or not chat_id:
@@ -33,18 +49,11 @@ def send_expansion_suggestion(city_name: str):
         f"האם להרחיב את החיפוש לכל {city_name}?\n\n"
         f"השתמש ב /add\\_neighborhood להוספת שכונות נוספות."
     )
-    requests.post(
+    _requests.post(
         f'https://api.telegram.org/bot{token}/sendMessage',
         json={'chat_id': chat_id, 'text': message, 'parse_mode': 'Markdown'},
         timeout=10
     )
-
-
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s %(levelname)s %(name)s — %(message)s'
-)
-log = logging.getLogger(__name__)
 
 
 def run_cycle():

@@ -15,11 +15,7 @@ TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 
 
 def format_message(listing: dict) -> str:
-    """Format a matched listing into a Telegram message."""
-    source = listing.get('source', 'unknown').capitalize()
-
-    # Yad2 and Madlan have direct fields
-    # Facebook has nested 'parsed' dict
+    """Format a matched listing into a Telegram message (Hebrew)."""
     parsed = listing.get('parsed', {})
 
     price = listing.get('price') or parsed.get('price')
@@ -29,9 +25,7 @@ def format_message(listing: dict) -> str:
     entry_date = listing.get('entry_date') or parsed.get('entry_date')
     summary = parsed.get('summary', '')
     post_url = listing.get('post_url', '')
-    image_url = listing.get('image_url', '')
 
-    # Location — combine available fields
     city = listing.get('city') or parsed.get('city') or ''
     neighborhood = listing.get('neighborhood') or parsed.get('neighborhood') or ''
     street = listing.get('street') or parsed.get('street') or ''
@@ -45,50 +39,37 @@ def format_message(listing: dict) -> str:
     elif neighborhood:
         location = neighborhood
     else:
-        location = 'Location not specified'
+        location = 'מיקום לא ידוע'
 
-    # Price
-    price_line = f"💰 {price:,} ₪/month" if price else "💰 Price not specified"
+    price_line = f"💰 {price:,} ₪ לחודש" if price else "💰 מחיר לא צוין"
 
-    # Rooms
     if rooms:
         rooms_display = int(rooms) if rooms == int(rooms) else rooms
-        rooms_line = f"🛏 {rooms_display} rooms"
+        rooms_line = f"🛏 {rooms_display} חדרים"
     else:
-        rooms_line = "🛏 Rooms not specified"
+        rooms_line = "🛏 מספר חדרים לא צוין"
 
-    # Parking
     if parking is True:
-        parking_line = "🚗 Parking: ✅"
+        parking_line = "🚗 חניה: ✅"
     elif parking is False:
-        parking_line = "🚗 Parking: ❌"
+        parking_line = "🚗 חניה: ❌"
     else:
-        parking_line = "🚗 Parking: not specified"
+        parking_line = "🚗 חניה: לא צוין"
 
-    # Safe room
     if safe_room is True:
-        safe_room_line = "🛡 Safe room: ✅"
+        safe_room_line = '🛡 ממ"ד: ✅'
     elif safe_room is False:
-        safe_room_line = "🛡 Safe room: ❌"
+        safe_room_line = '🛡 ממ"ד: ❌'
     else:
-        safe_room_line = "🛡 Safe room: not specified"
+        safe_room_line = '🛡 ממ"ד: לא צוין'
 
-    # Street
     street_line = f"📍 {street}" if street else ""
-
-    # Entry date
-    entry_line = f"📅 Entry: {entry_date}" if entry_date else ""
-
-    # Summary
+    entry_line = f"📅 כניסה: {entry_date}" if entry_date else ""
     summary_line = f'"{summary}"' if summary else ""
+    link_line = f"👉 [לצפייה במודעה]({post_url})" if post_url else ""
 
-    # Link
-    link_line = f"👉 [View listing]({post_url})" if post_url else ""
-
-    # Assemble
     lines = [
-        f"🏠 New Rental — {location}",
-        f"📡 Source: {source}",
+        f"🏠 דירה חדשה להשכרה — {location}",
         "",
         price_line,
         rooms_line,
@@ -120,21 +101,35 @@ def send_alert(listing: dict) -> bool:
         return False
 
     message = format_message(listing)
+    image_url = listing.get('image_url', '')
 
     try:
+        if image_url:
+            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
+            resp = requests.post(url, json={
+                'chat_id': TELEGRAM_CHAT_ID,
+                'photo': image_url,
+                'caption': message,
+                'parse_mode': 'Markdown',
+            }, timeout=10)
+            if resp.status_code == 200:
+                log.info(f'Telegram photo alert sent for listing {listing.get("id")}')
+                return True
+            log.warning(f'sendPhoto failed ({resp.status_code}), falling back to text')
+
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-        response = requests.post(url, json={
+        resp = requests.post(url, json={
             'chat_id': TELEGRAM_CHAT_ID,
             'text': message,
             'parse_mode': 'Markdown',
             'disable_web_page_preview': False,
         }, timeout=10)
 
-        if response.status_code == 200:
+        if resp.status_code == 200:
             log.info(f'Telegram alert sent for listing {listing.get("id")}')
             return True
         else:
-            log.error(f'Telegram API error {response.status_code}: {response.text}')
+            log.error(f'Telegram API error {resp.status_code}: {resp.text}')
             return False
 
     except Exception as e:
