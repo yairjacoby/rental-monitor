@@ -8,6 +8,8 @@ import logging
 import hashlib
 import time
 import random
+import os
+import json
 from datetime import datetime, timezone
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 from typing import Optional
@@ -162,6 +164,18 @@ def scrape_all_groups(config: dict) -> list:
             timezone_id='Asia/Jerusalem',
             viewport={'width': 1280, 'height': 900},
         )
+        # Inject Facebook session cookies if available (from FACEBOOK_COOKIES env var)
+        cookies_raw = os.environ.get('FACEBOOK_COOKIES', '')
+        if cookies_raw:
+            try:
+                cookies = json.loads(cookies_raw)
+                context.add_cookies(cookies)
+                log.info(f'Injected {len(cookies)} Facebook cookies')
+            except Exception as e:
+                log.warning(f'Failed to inject Facebook cookies: {e}')
+        else:
+            log.warning('FACEBOOK_COOKIES not set — scraping without login (will hit login wall)')
+
         page = context.new_page()
         try:
             from playwright_stealth import Stealth

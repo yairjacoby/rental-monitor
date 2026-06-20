@@ -8,7 +8,7 @@ API endpoint: https://gw.yad2.co.il/realestate-feed/rent/map
 import logging
 import hashlib
 import time
-import requests
+from curl_cffi import requests
 from typing import Optional
 from seen_store import is_seen, mark_seen
 from config_store import get_cities, get_neighborhoods, get_filter
@@ -106,7 +106,8 @@ def fetch_listings(city_id: str, region_id: str, area_id: str = None,
         params['maxPrice'] = max_price
 
     try:
-        resp = requests.get(BASE_URL, params=params, headers=HEADERS, timeout=15)
+        resp = requests.get(BASE_URL, params=params, headers=HEADERS,
+                            impersonate='chrome124', timeout=15)
         log.info(f'Yad2 response: status={resp.status_code}, length={len(resp.content)}, preview={resp.text[:300]}')
         if resp.status_code != 200:
             log.warning(f'Yad2 API returned {resp.status_code} for city {city_id}')
