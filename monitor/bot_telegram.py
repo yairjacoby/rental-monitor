@@ -84,46 +84,57 @@ def clear_state(chat_id):
     _state.pop(chat_id, None)
 
 
-# ── Facebook group discovery via Claude API ───────────────────────────────────
+# ── Facebook group discovery ──────────────────────────────────────────────────
 
-def search_facebook_groups(city_name: str) -> list[dict]:
-    """Use Claude API with web search to find public Facebook rental groups."""
+FACEBOOK_GROUPS_BY_CITY = {
+    'הוד השרון': [
+        {'name': 'דירות להשכרה הוד השרון 1', 'url': 'https://www.facebook.com/share/g/1EWSUWPM7i/'},
+        {'name': 'דירות להשכרה הוד השרון 2', 'url': 'https://www.facebook.com/share/g/1ExG6YipWn/'},
+        {'name': 'דירות להשכרה הוד השרון 3', 'url': 'https://www.facebook.com/share/g/1DLdauYUWD/'},
+        {'name': 'דירות להשכרה הוד השרון 4', 'url': 'https://www.facebook.com/share/g/1DkXixfNZo/'},
+        {'name': 'דירות להשכרה הוד השרון 5', 'url': 'https://www.facebook.com/share/g/18nvrayqZp/'},
+    ],
+}
+
+
+def search_facebook_groups(city_name: str) -> list:
+    """Return curated Facebook groups for a city, falling back to Claude web search."""
+    curated = FACEBOOK_GROUPS_BY_CITY.get(city_name, [])
+    if curated:
+        log.info(f'Returning {len(curated)} curated groups for {city_name}')
+        return curated
+
+    # Web search fallback
     try:
         response = anthropic_client.messages.create(
             model='claude-sonnet-4-6',
-            max_tokens=1000,
-            tools=[{'type': 'web_search_20250305', 'name': 'web_search'}],
+            max_tokens=800,
+            tools=[{'type': 'web_search_20250305'}],
             messages=[{
                 'role': 'user',
                 'content': (
                     f'Find public Facebook groups for renting apartments in {city_name}, Israel. '
-                    f'Search for: קבוצות פייסבוק דירות להשכרה {city_name} '
-                    f'Return a JSON array of objects with fields: name, url, members (estimated). '
-                    f'Only include actual Facebook group URLs (facebook.com/groups/). '
-                    f'Return ONLY valid JSON array, no explanation. '
-                    f'Example: [{{"name": "דירות הוד השרון", "url": "https://www.facebook.com/groups/123", "members": "12000"}}]'
+                    f'Return ONLY a JSON array, no prose, no markdown fences. '
+                    f'Format: [{{"name": "...", "url": "https://www.facebook.com/groups/..."}}]. '
+                    f'If none found, return [].'
                 )
             }]
         )
-
-        # Extract text from response
-        text = ''
         for block in response.content:
-            if hasattr(block, 'text'):
-                text += block.text
-
-        # Parse JSON from response
-        text = text.strip()
-        start = text.find('[')
-        end = text.rfind(']') + 1
-        if start >= 0 and end > start:
-            groups = json.loads(text[start:end])
-            return [g for g in groups if 'facebook.com' in g.get('url', '')]
-        return []
-
+            text = getattr(block, 'text', '')
+            if not text:
+                continue
+            text = text.strip().lstrip('`').rstrip('`').strip()
+            if text.lower().startswith('json'):
+                text = text[4:].strip()
+            start = text.find('[')
+            end = text.rfind(']') + 1
+            if start >= 0 and end > start:
+                groups = json.loads(text[start:end])
+                return [g for g in groups if 'facebook.com' in g.get('url', '')]
     except Exception as e:
         log.error(f'Facebook group search error: {e}')
-        return []
+    return []
 
 
 # ── /help ─────────────────────────────────────────────────────────────────────
@@ -263,18 +274,21 @@ async def handle_confirmation(update: Update, state: dict):
     data = state.get('data', {})
 
     if flow == 'add_city':
+        city_name = data['city_name']
         add_city(
-            data['city_name'],
+            city_name,
             yad2_city_id=data.get('yad2_city_id'),
             yad2_region_id=data.get('yad2_region_id'),
             max_price=data.get('max_price')
         )
         if data.get('neighborhood'):
-            add_neighborhood(data['city_name'], data['neighborhood'])
-        for url in data.get('facebook_groups', []):
-            add_facebook_group(url)
-        clear_state(chat_id)
-        await reply(update, f"✅ *{data['city_name']}* added. Monitoring starts next cycle.")
+            add_neighborhood(city_name, data['neighborhood'])
+        # City saved — now offer Facebook group addition as a separate step
+        set_state(chat_id, {'flow': 'add_groups', 'step': 'url', 'data': {'city_name': city_name, 'facebook_groups': []}})
+        await reply(update, (
+            f'✅ *{city_name}* added. Monitoring starts next cycle.\n\n'
+            f'Paste Facebook group URLs to monitor (one per message), or /skip to finish.'
+        ))
 
     elif flow == 'remove_city':
         remove_city(data['city_name'])
@@ -372,79 +386,40 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             elif text == '3':
                 data['parking'] = True
                 data['safe_room'] = True
-            state['step'] = 'facebook_search'
-            state['data']['facebook_groups'] = []
+            # Build summary and go straight to confirm — Facebook groups added after
+            city_name = data.get('city_name', '')
+            max_price = data.get('max_price')
+            rooms = data.get('rooms', get_filter('rooms_min', '4'))
+            nbhd = data.get('neighborhood', 'whole city')
+            parking = '✅' if data.get('parking') else '—'
+            safe_room = '✅' if data.get('safe_room') else '—'
+            price_str = f'{max_price:,} ₪' if max_price else 'no limit'
+            state['step'] = 'confirm'
             set_state(chat_id, state)
-            await reply(update,
-                f'Want me to search for public Facebook rental groups in *{data["city_name"]}*?\n\n'
-                f'Reply /search\\_groups or /skip'
-            )
-
-        elif step == 'facebook_search':
-            if text in ('/skip', 'skip'):
-                state['step'] = 'confirm'
-                set_state(chat_id, state)
-                await cmd_done(update, context)
-                return
-            if text == '/search_groups':
-                await reply(update, f'Searching for Facebook groups in {data["city_name"]}...')
-                groups = search_facebook_groups(data['city_name'])
-                if groups:
-                    state['found_groups'] = groups
-                    group_list = '\n'.join(
-                        f'{i+1}. {g["name"]} ({g.get("members", "?")} members)\n   {g["url"]}'
-                        for i, g in enumerate(groups)
-                    )
-                    state['step'] = 'facebook_pick'
-                    set_state(chat_id, state)
-                    await reply(update,
-                        f'Found these groups:\n\n{group_list}\n\n'
-                        f'Reply with numbers (e.g. `1 2`), `all`, or /skip'
-                    )
-                else:
-                    state['step'] = 'facebook_manual'
-                    set_state(chat_id, state)
-                    await reply(update,
-                        'Could not find groups automatically.\n\n'
-                        'Paste any Facebook group URLs you want to add (one per message), or /skip'
-                    )
-            else:
-                state['step'] = 'facebook_manual'
-                set_state(chat_id, state)
-                await reply(update,
-                    'Paste any Facebook group URLs you want to add (one per message), or /skip'
-                )
-
-        elif step == 'facebook_pick':
-            groups = state.get('found_groups', [])
-            if text.lower() == 'all':
-                selected = groups
-            else:
-                try:
-                    indices = [int(x) - 1 for x in text.split()]
-                    selected = [groups[i] for i in indices if 0 <= i < len(groups)]
-                except ValueError:
-                    await reply(update, 'Please reply with numbers like `1 2` or `all`')
-                    return
-            for g in selected:
-                data['facebook_groups'].append(g['url'])
-            state['step'] = 'facebook_manual'
-            set_state(chat_id, state)
-            count = len(selected)
-            await reply(update,
-                f'✅ {count} group{"s" if count != 1 else ""} selected.\n\n'
-                f'Any additional group URLs to add? Paste one per message, or /done'
-            )
-
-        elif step == 'facebook_manual':
-            if text.startswith('http') and 'facebook.com' in text:
-                data['facebook_groups'].append(text)
-                await reply(update, '✅ Added. Paste another URL or /done')
-            else:
-                await reply(update, 'Please paste a valid Facebook URL or /done')
+            await reply(update, (
+                f'*Summary — {city_name}*\n\n'
+                f'💰 Max price: {price_str}\n'
+                f'🛏 Min rooms: {rooms}\n'
+                f'📍 Neighborhood: {nbhd}\n'
+                f'🚗 Parking: {parking}\n'
+                f'🛡 Safe room: {safe_room}\n\n'
+                f'/confirm to save or /cancel to abort'
+            ))
 
         elif step == 'confirm':
             pass
+
+    # ── add_groups flow (post-city-confirm Facebook group collection) ──────────
+    elif flow == 'add_groups':
+        if step == 'url':
+            if text.startswith('http') and 'facebook.com' in text:
+                add_facebook_group(text)
+                data['facebook_groups'].append(text)
+                set_state(chat_id, state)
+                count = len(data['facebook_groups'])
+                await reply(update, f'✅ Group {count} added. Paste another URL or /done to finish.')
+            else:
+                await reply(update, 'Please paste a valid Facebook group URL, or /done to finish.')
 
     # ── remove_city flow ───────────────────────────────────────────────────────
     elif flow == 'remove_city':
@@ -522,34 +497,13 @@ async def cmd_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     flow = state.get('flow')
     data = state.get('data', {})
 
-    if flow == 'add_city' and state.get('step') in ('facebook_manual', 'facebook_pick'):
-        # Show summary and ask for confirmation
-        city_name = data.get('city_name', '')
-        max_price = data.get('max_price')
-        rooms = data.get('rooms', get_filter('rooms_min', '4'))
-        neighborhood = data.get('neighborhood', 'whole city')
-        parking = '✅' if data.get('parking') else '—'
-        safe_room = '✅' if data.get('safe_room') else '—'
-        groups = data.get('facebook_groups', [])
-
-        price_str = f'{max_price:,} ₪' if max_price else 'no limit'
-        groups_str = f'{len(groups)} group{"s" if len(groups) != 1 else ""}' if groups else 'none'
-
-        state['step'] = 'confirm'
-        set_state(chat_id, state)
-
-        await reply(update, f"""
-*Summary — {city_name}*
-
-💰 Max price: {price_str}
-🛏 Min rooms: {rooms}
-📍 Neighborhood: {neighborhood}
-🚗 Parking: {parking}
-🛡 Safe room: {safe_room}
-👥 Facebook groups: {groups_str}
-
-/confirm to save or /cancel to abort
-""")
+    if flow == 'add_groups':
+        count = len(data.get('facebook_groups', []))
+        clear_state(chat_id)
+        if count:
+            await reply(update, f'✅ Done — {count} Facebook group{"s" if count != 1 else ""} added.')
+        else:
+            await reply(update, '✅ Done. Use /add\\_group to add groups later.')
     else:
         await reply(update, 'Use /cancel to exit.')
 
@@ -579,14 +533,11 @@ async def cmd_skip(update: Update, context: ContextTypes.DEFAULT_TYPE):
             set_state(chat_id, state)
             await reply(update, 'Must-haves?\n\n1. Parking\n2. Safe room ממ"ד\n3. Both\n4. Neither')
 
-        elif step in ('facebook_search', 'facebook_pick', 'facebook_manual'):
-            data['facebook_groups'] = data.get('facebook_groups', [])
-            state['step'] = 'facebook_manual'
-            set_state(chat_id, state)
-            await cmd_done(update, context)
-
         else:
             await reply(update, 'Nothing to skip here.')
+    elif flow == 'add_groups':
+        clear_state(chat_id)
+        await reply(update, '✅ Done. Use /add\\_group to add groups later.')
     else:
         await reply(update, 'Nothing to skip.')
 

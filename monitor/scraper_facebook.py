@@ -33,6 +33,9 @@ def make_post_id(group_url: str, post_text: str) -> str:
 
 
 def is_login_wall(page_text: str) -> bool:
+    if len(page_text) < 1000:
+        log.warning(f'Page suspiciously short ({len(page_text)} chars) — likely bot-detection or login wall')
+        return True
     lower = page_text.lower()
     return any(signal in lower for signal in LOGIN_WALL_SIGNALS)
 
@@ -45,15 +48,17 @@ def scrape_group(page, group_url: str) -> list:
         page.goto(group_url, wait_until='networkidle', timeout=45000)
         time.sleep(random.uniform(3.0, 5.0))
 
-        # Switch to recent posts if we landed on a real group page
+        # Use the resolved URL (after share-link redirect) for sorting, not the original share link
         current_url = page.url
+        log.info(f'Resolved URL: {current_url}')
         if 'facebook.com' in current_url and 'login' not in current_url:
-            sorting_url = group_url.rstrip('/') + '/?sorting=RECENT'
-            if current_url != sorting_url:
+            sorting_url = current_url.split('?')[0].rstrip('/') + '/?sorting=RECENT'
+            if sorting_url != current_url:
                 page.goto(sorting_url, wait_until='networkidle', timeout=45000)
                 time.sleep(random.uniform(3.0, 5.0))
 
         page_text = page.inner_text('body')
+        log.info(f'Page text preview: {page_text[:300]}')
         log.info(f'Page text length: {len(page_text)} chars')
 
         if is_login_wall(page_text):
@@ -158,6 +163,12 @@ def scrape_all_groups(config: dict) -> list:
             viewport={'width': 1280, 'height': 900},
         )
         page = context.new_page()
+        try:
+            from playwright_stealth import Stealth
+            Stealth().apply_stealth_sync(page)
+            log.info('Playwright stealth applied')
+        except Exception as e:
+            log.warning(f'playwright_stealth not available: {e}')
 
         for group_url in group_urls:
             posts = scrape_group(page, group_url)

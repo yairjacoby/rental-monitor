@@ -107,8 +107,12 @@ def fetch_listings(city_id: str, region_id: str, area_id: str = None,
 
     try:
         resp = requests.get(BASE_URL, params=params, headers=HEADERS, timeout=15)
+        log.info(f'Yad2 response: status={resp.status_code}, length={len(resp.content)}, preview={resp.text[:300]}')
         if resp.status_code != 200:
             log.warning(f'Yad2 API returned {resp.status_code} for city {city_id}')
+            return []
+        if not resp.content:
+            log.warning(f'Yad2 API returned empty body for city {city_id} — possible IP block')
             return []
         data = resp.json()
         markers = data.get('data', {}).get('markers', [])
