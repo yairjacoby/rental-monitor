@@ -7,6 +7,7 @@ Also runs the Telegram bot for live configuration.
 import logging
 import os
 import threading
+import datetime
 from dotenv import load_dotenv
 from apscheduler.schedulers.background import BackgroundScheduler
 from seen_store import init_db
@@ -28,6 +29,24 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 _expansion_cooldown = {}  # city_name -> datetime of last send
+_last_alert_sent_at: datetime.datetime = None
+_last_heartbeat_sent_at: datetime.datetime = None
+
+
+def _send_heartbeat():
+    import requests as _requests
+    token = os.environ.get('TELEGRAM_BOT_TOKEN')
+    chat_id = os.environ.get('TELEGRAM_CHAT_ID')
+    if not token or not chat_id:
+        return
+    _requests.post(
+        f'https://api.telegram.org/bot{token}/sendMessage',
+        json={'chat_id': chat_id,
+              'text': '✅ המערכת פעילה — לא נמצאו מודעות חדשות בשעות האחרונות.',
+              'parse_mode': 'Markdown'},
+        timeout=10
+    )
+    log.info('Heartbeat notification sent')
 
 
 def send_expansion_suggestion(city_name: str):
@@ -96,6 +115,19 @@ def run_cycle():
         log.error(f'Facebook scraper error: {e}')
 
     log.info(f'=== Cycle end — {total_sent} alerts sent ===')
+
+    global _last_alert_sent_at, _last_heartbeat_sent_at
+    now = datetime.datetime.now()
+    if total_sent > 0:
+        _last_alert_sent_at = now
+    else:
+        reference = _last_alert_sent_at or (now - datetime.timedelta(hours=13))
+        hours_since_alert = (now - reference).total_seconds() / 3600
+        hours_since_heartbeat = (_last_heartbeat_sent_at and
+                                 (now - _last_heartbeat_sent_at).total_seconds() / 3600) or 999
+        if hours_since_alert >= 12 and hours_since_heartbeat >= 12:
+            _last_heartbeat_sent_at = now
+            _send_heartbeat()
 
 
 def main():

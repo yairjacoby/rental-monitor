@@ -101,19 +101,29 @@ def send_alert(listing: dict) -> bool:
         return False
 
     message = format_message(listing)
-    image_url = listing.get('image_url', '')
+    image_urls = listing.get('image_urls', [])
 
     try:
-        if image_url:
+        if len(image_urls) >= 2:
+            media = [{'type': 'photo', 'media': image_urls[0], 'caption': message, 'parse_mode': 'Markdown'}]
+            media += [{'type': 'photo', 'media': u} for u in image_urls[1:9]]
+            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMediaGroup"
+            resp = requests.post(url, json={'chat_id': TELEGRAM_CHAT_ID, 'media': media}, timeout=15)
+            if resp.status_code == 200:
+                log.info(f'Telegram album ({len(media)} photos) sent for {listing.get("id")}')
+                return True
+            log.warning(f'sendMediaGroup failed ({resp.status_code}), falling back')
+
+        if image_urls:
             url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
             resp = requests.post(url, json={
                 'chat_id': TELEGRAM_CHAT_ID,
-                'photo': image_url,
+                'photo': image_urls[0],
                 'caption': message,
                 'parse_mode': 'Markdown',
             }, timeout=10)
             if resp.status_code == 200:
-                log.info(f'Telegram photo alert sent for listing {listing.get("id")}')
+                log.info(f'Telegram photo alert sent for {listing.get("id")}')
                 return True
             log.warning(f'sendPhoto failed ({resp.status_code}), falling back to text')
 
@@ -124,13 +134,11 @@ def send_alert(listing: dict) -> bool:
             'parse_mode': 'Markdown',
             'disable_web_page_preview': False,
         }, timeout=10)
-
         if resp.status_code == 200:
-            log.info(f'Telegram alert sent for listing {listing.get("id")}')
+            log.info(f'Telegram text alert sent for {listing.get("id")}')
             return True
-        else:
-            log.error(f'Telegram API error {resp.status_code}: {resp.text}')
-            return False
+        log.error(f'Telegram API error {resp.status_code}: {resp.text}')
+        return False
 
     except Exception as e:
         log.error(f'Failed to send Telegram alert: {e}')

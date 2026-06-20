@@ -135,12 +135,16 @@ def parse_listing(raw: dict, city_name: str) -> dict:
     token = raw.get('token', str(raw.get('orderId', '')))
 
     images = raw.get('images', [])
-    image_url = ''
+    image_urls = []
     if images and isinstance(images, list):
-        first = images[0]
-        image_url = first.get('src', '') or first.get('url', '') or first.get('thumbnail', '')
-    if not image_url:
-        image_url = raw.get('thumbnail', '') or raw.get('imageUrl', '')
+        for img in images:
+            url = img.get('src', '') or img.get('url', '') or img.get('thumbnail', '')
+            if url:
+                image_urls.append(url)
+    if not image_urls:
+        fallback = raw.get('thumbnail', '') or raw.get('imageUrl', '')
+        if fallback:
+            image_urls.append(fallback)
 
     return {
         'id':           make_listing_id(raw),
@@ -153,7 +157,7 @@ def parse_listing(raw: dict, city_name: str) -> dict:
         'parking':      _has_tag(raw, 'חניה'),
         'safe_room':    _has_tag(raw, 'ממ"ד') or _has_tag(raw, 'מרחב מוגן'),
         'post_url':     f'https://www.yad2.co.il/item/{token}',
-        'image_url':    image_url,
+        'image_urls':   image_urls,
         'raw':          raw,
     }
 
