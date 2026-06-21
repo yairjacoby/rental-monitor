@@ -7,6 +7,8 @@ API endpoint: https://gw.yad2.co.il/realestate-feed/rent/map
 
 import logging
 import hashlib
+import json
+import re
 import time
 from curl_cffi import requests
 from typing import Optional
@@ -81,17 +83,6 @@ def make_listing_id(listing: dict) -> str:
     return hashlib.md5(raw.encode()).hexdigest()
 
 
-def _has_tag(raw: dict, keyword: str) -> Optional[bool]:
-    """Check tags array for a keyword. Returns True if found, None if not present."""
-    tags = raw.get('tags', [])
-    if not tags:
-        return None
-    for tag in tags:
-        if keyword in tag.get('name', ''):
-            return True
-    return None
-
-
 def fetch_listings(city_id: str, region_id: str, area_id: str = None,
                    min_rooms: float = 4, max_price: int = None) -> list:
     """Fetch raw listings from Yad2 API for one city/area combination."""
@@ -147,12 +138,45 @@ def parse_listing(raw: dict, city_name: str) -> dict:
         'street':       street,
         'rooms':        float(rooms) if rooms else None,
         'price':        int(price) if price else None,
-        'parking':      None,  # not available in Yad2 map API
-        'safe_room':    None,  # not available in Yad2 map API
+        'parking':      None,
+        'safe_room':    None,
+        'token':        token,
         'post_url':     f'https://www.yad2.co.il/item/{token}',
         'image_urls':   image_urls,
         'raw':          raw,
     }
+
+
+def fetch_listing_detail(token: str) -> dict:
+    """Fetch parking/safe_room from the full Yad2 listing page via __NEXT_DATA__ JSON."""
+    try:
+        resp = requests.get(
+            f'https://www.yad2.co.il/item/{token}',
+            headers={**HEADERS, 'Accept': 'text/html,application/xhtml+xml,*/*'},
+            impersonate='chrome124',
+            timeout=10
+        )
+        if resp.status_code != 200:
+            return {}
+        match = re.search(
+            r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>',
+            resp.text, re.DOTALL
+        )
+        if not match:
+            return {}
+        data = json.loads(match.group(1))
+        queries = (data.get('props', {}).get('pageProps', {})
+                   .get('dehydratedState', {}).get('queries', []))
+        if not queries:
+            return {}
+        in_property = queries[0].get('state', {}).get('data', {}).get('inProperty', {})
+        return {
+            'parking':   in_property.get('includeParking'),
+            'safe_room': in_property.get('includeBuildingShelter'),
+        }
+    except Exception as e:
+        log.debug(f'fetch_listing_detail failed for {token}: {e}')
+        return {}
 
 
 def scrape_yad2() -> tuple:
@@ -166,6 +190,10 @@ def scrape_yad2() -> tuple:
         return [], []
 
     rooms_min = float(get_filter('rooms_min', '4'))
+    require_parking   = get_filter('must_have_parking',  'false') == 'true'
+    require_safe_room = get_filter('must_have_safe_room', 'false') == 'true'
+    MAX_DETAIL_FETCHES = 10
+    detail_fetches = 0
     new_listings = []
     cities_with_no_results = []
 
@@ -209,6 +237,18 @@ def scrape_yad2() -> tuple:
                     continue
 
             if not is_seen(listing['id']):
+                if detail_fetches < MAX_DETAIL_FETCHES:
+                    detail = fetch_listing_detail(listing['token'])
+                    if detail:
+                        listing.update(detail)
+                        log.info(f'Detail fetched for {listing["id"][:8]}: parking={listing.get("parking")} safe_room={listing.get("safe_room")}')
+                    detail_fetches += 1
+                if require_parking and listing.get('parking') is False:
+                    log.info(f'Skipping {listing["id"][:8]} — no parking (filter active)')
+                    continue
+                if require_safe_room and listing.get('safe_room') is False:
+                    log.info(f'Skipping {listing["id"][:8]} — no safe room (filter active)')
+                    continue
                 mark_seen(listing['id'], source='yad2')
                 new_listings.append(listing)
                 new_listings_this_city.append(listing)
