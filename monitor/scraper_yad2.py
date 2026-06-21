@@ -221,7 +221,7 @@ def scrape_yad2() -> tuple:
                 new_listings_this_city.append(listing)
 
         log.info(f'{city_name}: {len(raw_listings)} raw → {len(new_listings_this_city)} passed filters')
-        if not new_listings_this_city:
+        if nbhd_names and not new_listings_this_city:
             cities_with_no_results.append(city_name)
 
     log.info(f'Yad2: {len(new_listings)} new listings')
