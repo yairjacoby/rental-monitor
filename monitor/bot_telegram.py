@@ -100,44 +100,58 @@ def clear_state(chat_id):
 KEYWORD_INTENTS = {
     # add_city
     'הוסף עיר': 'add_city', 'הוספת עיר': 'add_city', 'עיר חדשה': 'add_city',
-    'רוצה להוסיף עיר': 'add_city', 'להוסיף עיר': 'add_city',
+    'להוסיף עיר': 'add_city', 'רוצה להוסיף עיר': 'add_city',
+    'אני רוצה להוסיף עיר': 'add_city', 'רוצה לעקוב': 'add_city',
     'עקוב אחרי עיר': 'add_city', 'עקוב אחר עיר': 'add_city',
     'add city': 'add_city', 'add a city': 'add_city', 'new city': 'add_city',
     'monitor city': 'add_city', 'track city': 'add_city', 'watch city': 'add_city',
     # remove_city
     'הסר עיר': 'remove_city', 'הסרת עיר': 'remove_city', 'מחק עיר': 'remove_city',
+    'להסיר עיר': 'remove_city', 'רוצה להסיר עיר': 'remove_city',
     'בטל עיר': 'remove_city', 'הפסק לעקוב': 'remove_city',
     'remove city': 'remove_city', 'delete city': 'remove_city', 'stop monitoring': 'remove_city',
     # remove_neighborhood
     'הסר שכונה': 'remove_neighborhood', 'מחק שכונה': 'remove_neighborhood',
+    'להסיר שכונה': 'remove_neighborhood', 'רוצה להסיר שכונה': 'remove_neighborhood',
     'remove neighborhood': 'remove_neighborhood', 'delete neighborhood': 'remove_neighborhood',
     # set_price
     'שנה מחיר': 'set_price', 'עדכן מחיר': 'set_price', 'מחיר מקסימאלי': 'set_price',
+    'לשנות מחיר': 'set_price', 'רוצה לשנות מחיר': 'set_price', 'לעדכן מחיר': 'set_price',
     'כמה לשלם': 'set_price', 'תקציב': 'set_price',
     'set price': 'set_price', 'max price': 'set_price', 'budget': 'set_price',
     'change price': 'set_price', 'update price': 'set_price', 'price limit': 'set_price',
     # set_rooms
     'שנה חדרים': 'set_rooms', 'עדכן חדרים': 'set_rooms', 'מינימום חדרים': 'set_rooms',
+    'לשנות חדרים': 'set_rooms', 'רוצה לשנות חדרים': 'set_rooms', 'לעדכן חדרים': 'set_rooms',
     'כמה חדרים': 'set_rooms',
     'set rooms': 'set_rooms', 'min rooms': 'set_rooms', 'rooms minimum': 'set_rooms',
     'change rooms': 'set_rooms', 'update rooms': 'set_rooms',
     # add_group
     'הוסף קבוצה': 'add_group', 'הוסף קבוצת פייסבוק': 'add_group',
+    'להוסיף קבוצה': 'add_group', 'להוסיף קבוצות': 'add_group',
+    'קבוצות פייסבוק': 'add_group', 'קבוצת פייסבוק': 'add_group',
+    'רוצה להוסיף קבוצה': 'add_group', 'רוצה להוסיף קבוצות': 'add_group',
+    'להוסיף קבוצת פייסבוק': 'add_group', 'להוסיף קבוצות פייסבוק': 'add_group',
     'קבוצה חדשה': 'add_group', 'הוסף פייסבוק': 'add_group',
     'add group': 'add_group', 'add facebook group': 'add_group', 'new group': 'add_group',
     'facebook group': 'add_group', 'add fb group': 'add_group',
     # remove_group
     'הסר קבוצה': 'remove_group', 'מחק קבוצה': 'remove_group',
+    'להסיר קבוצה': 'remove_group', 'להסיר קבוצות': 'remove_group',
+    'רוצה להסיר קבוצה': 'remove_group',
     'remove group': 'remove_group', 'delete group': 'remove_group',
     # pause
     'עצור': 'pause', 'השהה': 'pause', 'הפסק': 'pause', 'עצור ניטור': 'pause',
+    'לעצור': 'pause', 'רוצה לעצור': 'pause', 'לעצור ניטור': 'pause',
     'pause': 'pause', 'stop': 'pause', 'disable': 'pause', 'turn off': 'pause',
     # resume
     'המשך': 'resume', 'הפעל': 'resume', 'המשך ניטור': 'resume',
+    'להמשיך': 'resume', 'רוצה להמשיך': 'resume', 'להפעיל': 'resume',
     'resume': 'resume', 'enable': 'resume', 'turn on': 'resume',
     # status
     'מה המצב': 'status', 'סטטוס': 'status', 'הגדרות': 'status', 'מה מוגדר': 'status',
-    'הצג הגדרות': 'status', 'מה יש': 'status',
+    'הצג הגדרות': 'status', 'מה יש': 'status', 'מה קורה': 'status', 'מה הסטטוס': 'status',
+    'רוצה לראות סטטוס': 'status',
     'status': 'status', 'settings': 'status', 'show config': 'status',
     'what is set': 'status', 'current config': 'status', 'show settings': 'status',
     # help
