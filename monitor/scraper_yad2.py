@@ -134,17 +134,10 @@ def parse_listing(raw: dict, city_name: str) -> dict:
     neighborhood = address.get('neighborhood', {}).get('text', '')
     token = raw.get('token', str(raw.get('orderId', '')))
 
-    images = raw.get('images', [])
-    image_urls = []
-    if images and isinstance(images, list):
-        for img in images:
-            url = img.get('src', '') or img.get('url', '') or img.get('thumbnail', '')
-            if url:
-                image_urls.append(url)
-    if not image_urls:
-        fallback = raw.get('thumbnail', '') or raw.get('imageUrl', '')
-        if fallback:
-            image_urls.append(fallback)
+    meta = raw.get('metaData', {})
+    image_urls = list(meta.get('images', []))
+    if not image_urls and meta.get('coverImage'):
+        image_urls = [meta['coverImage']]
 
     return {
         'id':           make_listing_id(raw),
@@ -154,8 +147,8 @@ def parse_listing(raw: dict, city_name: str) -> dict:
         'street':       street,
         'rooms':        float(rooms) if rooms else None,
         'price':        int(price) if price else None,
-        'parking':      _has_tag(raw, 'חניה'),
-        'safe_room':    _has_tag(raw, 'ממ"ד') or _has_tag(raw, 'מרחב מוגן'),
+        'parking':      None,  # not available in Yad2 map API
+        'safe_room':    None,  # not available in Yad2 map API
         'post_url':     f'https://www.yad2.co.il/item/{token}',
         'image_urls':   image_urls,
         'raw':          raw,
@@ -173,12 +166,6 @@ def scrape_yad2() -> tuple:
         return [], []
 
     rooms_min = float(get_filter('rooms_min', '4'))
-    require_parking = get_filter('must_have_parking', 'false') == 'true'
-    require_safe_room = get_filter('must_have_safe_room', 'false') == 'true'
-    if require_parking:
-        log.info('Filter active: parking required')
-    if require_safe_room:
-        log.info('Filter active: safe room required')
     new_listings = []
     cities_with_no_results = []
 
@@ -220,14 +207,6 @@ def scrape_yad2() -> tuple:
                            for n in nbhd_names):
                     log.info(f'Skipping {listing_nbhd} — not in {nbhd_names}')
                     continue
-
-            # Amenity filters
-            if require_parking and not listing.get('parking'):
-                log.info(f'Skipping {listing["id"][:8]} — no parking')
-                continue
-            if require_safe_room and not listing.get('safe_room'):
-                log.info(f'Skipping {listing["id"][:8]} — no safe room')
-                continue
 
             if not is_seen(listing['id']):
                 mark_seen(listing['id'], source='yad2')

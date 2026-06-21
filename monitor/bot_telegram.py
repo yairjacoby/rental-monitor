@@ -480,6 +480,28 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await qreply(query, summary,
                      kb([('✅ שמור', 'confirm|yes'), ('❌ בטל', 'confirm|no')]))
 
+    elif action == 'must_have_toggle':
+        current = get_filter(f'must_have_{value}', 'false')
+        new_val = 'false' if current == 'true' else 'true'
+        set_filter(f'must_have_{value}', new_val)
+        label = {'parking': '🚗 חניה', 'safe_room': '🛡 ממ"ד'}.get(value, value)
+        status = '✅ הופעל' if new_val == 'true' else '❌ כובה'
+        parking_val = get_filter('must_have_parking', 'false')
+        safe_room_val = get_filter('must_have_safe_room', 'false')
+        parking_on = parking_val == 'true'
+        safe_room_on = safe_room_val == 'true'
+        await qreply(
+            query,
+            f'*דרישות חובה* — {label} {status}\n\n'
+            f'🚗 חניה: {"✅ פעיל" if parking_on else "❌ כבוי"}\n'
+            f'🛡 ממ"ד: {"✅ פעיל" if safe_room_on else "❌ כבוי"}\n\n'
+            '⚠️ שים לב: הנתון לא זמין ב-API של יד2 — הפילטר ישפיע רק על פייסבוק.',
+            markup=kb(
+                [(f'{"כבה" if parking_on else "הפעל"} חניה 🚗', 'must_have_toggle|parking')],
+                [(f'{"כבה" if safe_room_on else "הפעל"} ממ"ד 🛡', 'must_have_toggle|safe_room')],
+            )
+        )
+
     elif action == 'confirm':
         if value == 'no':
             clear_state(chat_id)
@@ -499,6 +521,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         '/remove\\_neighborhood — הסרת שכונה\n'
         '/set\\_price — שינוי מחיר מקסימאלי\n'
         '/set\\_rooms — שינוי מינימום חדרים\n'
+        '/must\\_have — הפעלה/כיבוי דרישות חניה וממ"ד\n'
         '/add\\_group — הוספת קבוצת פייסבוק\n'
         '/remove\\_group — הסרת קבוצת פייסבוק\n'
         '/pause — השהיית הניטור\n'
@@ -605,6 +628,27 @@ async def cmd_remove_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     buttons.append([('❌ ביטול', 'confirm|no')])
     set_state(chat_id, {'flow': 'remove_group', 'step': 'pick', 'groups': groups})
     await reply(update, 'איזו קבוצה להסיר?', markup=kb(*buttons))
+
+
+# ── /must_have ────────────────────────────────────────────────────────────────
+
+@owner_only
+async def cmd_must_have(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    parking_val = get_filter('must_have_parking', 'false')
+    safe_room_val = get_filter('must_have_safe_room', 'false')
+    parking_on = parking_val == 'true'
+    safe_room_on = safe_room_val == 'true'
+    parking_label = f'🚗 חניה: {"✅ פעיל" if parking_on else "❌ כבוי"}'
+    safe_room_label = f'🛡 ממ"ד: {"✅ פעיל" if safe_room_on else "❌ כבוי"}'
+    await reply(
+        update,
+        f'*דרישות חובה*\n\n{parking_label}\n{safe_room_label}\n\n'
+        'לחץ להפעלה/כיבוי:',
+        markup=kb(
+            [(f'{"כבה" if parking_on else "הפעל"} חניה 🚗', 'must_have_toggle|parking')],
+            [(f'{"כבה" if safe_room_on else "הפעל"} ממ"ד 🛡', 'must_have_toggle|safe_room')],
+        )
+    )
 
 
 # ── /pause and /resume ────────────────────────────────────────────────────────
@@ -852,6 +896,7 @@ def build_bot() -> Application:
     app.add_handler(CommandHandler('set_rooms', cmd_set_rooms))
     app.add_handler(CommandHandler('add_group', cmd_add_group))
     app.add_handler(CommandHandler('remove_group', cmd_remove_group))
+    app.add_handler(CommandHandler('must_have', cmd_must_have))
     app.add_handler(CommandHandler('pause', cmd_pause))
     app.add_handler(CommandHandler('resume', cmd_resume))
     app.add_handler(CommandHandler('confirm', cmd_confirm))
