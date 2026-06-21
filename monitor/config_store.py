@@ -5,6 +5,7 @@ Survives Railway restarts and redeploys.
 """
 
 import os
+import json
 import logging
 from typing import Optional
 
@@ -183,6 +184,38 @@ def set_paused(paused: bool):
         log.error(f'set_paused error: {e}')
 
 
+# ── Bot conversation state (persisted so Railway restarts don't lose flows) ───
+
+def get_bot_state(chat_id: str) -> dict:
+    try:
+        result = get_client().table('monitor_state').select('value').eq(
+            'key', f'bot_state_{chat_id}').execute()
+        if result.data:
+            return json.loads(result.data[0]['value'])
+        return {}
+    except Exception as e:
+        log.error(f'get_bot_state error: {e}')
+        return {}
+
+
+def set_bot_state(chat_id: str, state: dict):
+    try:
+        get_client().table('monitor_state').upsert({
+            'key': f'bot_state_{chat_id}',
+            'value': json.dumps(state, ensure_ascii=False)
+        }, on_conflict='key').execute()
+    except Exception as e:
+        log.error(f'set_bot_state error: {e}')
+
+
+def clear_bot_state(chat_id: str):
+    try:
+        get_client().table('monitor_state').delete().eq(
+            'key', f'bot_state_{chat_id}').execute()
+    except Exception as e:
+        log.error(f'clear_bot_state error: {e}')
+
+
 # ── Config Summary ────────────────────────────────────────────────────────────
 
 def get_config_summary() -> str:
@@ -194,8 +227,8 @@ def get_config_summary() -> str:
     lines = ['📋 Current config:\n']
     lines.append(f'⏸ Status: {"PAUSED" if paused else "✅ Active"}')
     lines.append(f'🛏 Min rooms: {filters.get("rooms_min", "4")}')
-    lines.append(f'🚗 Parking required: {filters.get("must_have_parking", "true")}')
-    lines.append(f'🛡 Safe room required: {filters.get("must_have_safe_room", "true")}')
+    lines.append(f'🚗 Parking required: {filters.get("must_have_parking", "false")}')
+    lines.append(f'🛡 Safe room required: {filters.get("must_have_safe_room", "false")}')
 
     lines.append('\n🏙 Cities:')
     if not cities:

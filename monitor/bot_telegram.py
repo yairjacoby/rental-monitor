@@ -19,6 +19,7 @@ from config_store import (
     set_paused, is_paused,
     get_config_summary,
     get_neighborhoods, get_facebook_groups,
+    get_bot_state, set_bot_state, clear_bot_state,
 )
 
 log = logging.getLogger(__name__)
@@ -53,9 +54,6 @@ ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY')
 
 anthropic_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
-_state = {}
-
-
 # ── Core helpers ──────────────────────────────────────────────────────────────
 
 def owner_only(func):
@@ -84,15 +82,15 @@ async def qreply(query, text: str, markup=None):
 
 
 def get_state(chat_id) -> dict:
-    return _state.get(chat_id, {})
+    return get_bot_state(str(chat_id))
 
 
 def set_state(chat_id, state: dict):
-    _state[chat_id] = state
+    set_bot_state(str(chat_id), state)
 
 
 def clear_state(chat_id):
-    _state.pop(chat_id, None)
+    clear_bot_state(str(chat_id))
 
 
 # ── NLU — keyword map + Claude Haiku fallback ─────────────────────────────────
@@ -329,6 +327,12 @@ async def _do_confirmation(query_or_update, chat_id: int, state: dict):
                  yad2_region_id=data.get('yad2_region_id'), max_price=data.get('max_price'))
         if data.get('neighborhood'):
             add_neighborhood(city_name, data['neighborhood'])
+        if data.get('rooms'):
+            set_filter('rooms_min', str(data['rooms']))
+        if data.get('parking'):
+            set_filter('must_have_parking', 'true')
+        if data.get('safe_room'):
+            set_filter('must_have_safe_room', 'true')
         set_state(chat_id, {'flow': 'add_groups', 'step': 'url',
                              'data': {'city_name': city_name, 'facebook_groups': []}})
         await edit(f'✅ *{city_name}* נוספה. הניטור יתחיל במחזור הבא.')

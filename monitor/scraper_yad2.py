@@ -173,6 +173,12 @@ def scrape_yad2() -> tuple:
         return [], []
 
     rooms_min = float(get_filter('rooms_min', '4'))
+    require_parking = get_filter('must_have_parking', 'false') == 'true'
+    require_safe_room = get_filter('must_have_safe_room', 'false') == 'true'
+    if require_parking:
+        log.info('Filter active: parking required')
+    if require_safe_room:
+        log.info('Filter active: safe room required')
     new_listings = []
     cities_with_no_results = []
 
@@ -215,12 +221,20 @@ def scrape_yad2() -> tuple:
                     log.info(f'Skipping {listing_nbhd} — not in {nbhd_names}')
                     continue
 
+            # Amenity filters
+            if require_parking and not listing.get('parking'):
+                log.info(f'Skipping {listing["id"][:8]} — no parking')
+                continue
+            if require_safe_room and not listing.get('safe_room'):
+                log.info(f'Skipping {listing["id"][:8]} — no safe room')
+                continue
+
             if not is_seen(listing['id']):
                 mark_seen(listing['id'], source='yad2')
                 new_listings.append(listing)
                 new_listings_this_city.append(listing)
 
-        log.info(f'{city_name}: {len(raw_listings)} raw → {len(new_listings_this_city)} passed filters')
+        log.info(f'{city_name}: {len(raw_listings)} raw → {len(new_listings_this_city)} new (unseen)')
         if nbhd_names and not new_listings_this_city:
             cities_with_no_results.append(city_name)
 
