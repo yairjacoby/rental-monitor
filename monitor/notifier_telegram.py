@@ -102,6 +102,7 @@ def send_alert(listing: dict) -> bool:
 
     message = format_message(listing)
     image_urls = listing.get('image_urls', [])
+    log.info(f'Sending alert for {listing.get("id")} — {len(image_urls)} image(s)')
 
     try:
         if len(image_urls) >= 2:

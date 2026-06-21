@@ -151,7 +151,7 @@ def main():
     # Start Telegram bot (blocking — runs in main thread)
     log.info('Starting Telegram bot...')
     bot = build_bot()
-    bot.run_polling(allowed_updates=['message'])
+    bot.run_polling(allowed_updates=['message', 'callback_query'])
 
 
 if __name__ == '__main__':
