@@ -15,9 +15,9 @@ from config_store import init_config_db, is_paused, get_config_summary
 from scraper_yad2 import scrape_yad2
 from scraper_facebook import scrape_all_groups
 from parser_claude import parse_listings
-from notifier_telegram import send_alert
+from notifier_telegram import send_alert, city_color
 from bot_telegram import build_bot
-from config_store import get_facebook_groups
+from config_store import get_facebook_groups, get_city_thread_id
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'))
 
@@ -31,6 +31,7 @@ log = logging.getLogger(__name__)
 _expansion_cooldown = {}  # city_name -> datetime of last send
 _last_alert_sent_at: datetime.datetime = None
 _last_heartbeat_sent_at: datetime.datetime = None
+_today_alerts: dict = {}  # city → list of {price, rooms, sqm, post_url}
 
 
 def _send_heartbeat():
@@ -77,6 +78,8 @@ def send_expansion_suggestion(city_name: str):
 
 def run_cycle():
     """One full scrape cycle across all sources."""
+    global _last_alert_sent_at, _last_heartbeat_sent_at, _today_alerts
+
     if is_paused():
         log.info('Monitor is paused — skipping cycle')
         return
@@ -89,8 +92,16 @@ def run_cycle():
         yad2_listings, zero_result_cities = scrape_yad2()
         log.info(f'Yad2: {len(yad2_listings)} new listings')
         for listing in yad2_listings:
-            send_alert(listing)
-            total_sent += 1
+            if send_alert(listing):
+                total_sent += 1
+                city = listing.get('city', '')
+                if city:
+                    _today_alerts.setdefault(city, []).append({
+                        'price':    listing.get('price'),
+                        'rooms':    listing.get('rooms'),
+                        'sqm':      listing.get('sqm'),
+                        'post_url': listing.get('post_url', ''),
+                    })
         # Suggest expanding search if no results found
         for city in zero_result_cities:
             send_expansion_suggestion(city)
@@ -107,8 +118,16 @@ def run_cycle():
             matched = parse_listings(raw_posts, config)
             log.info(f'Facebook: {len(matched)} matched listings')
             for listing in matched:
-                send_alert(listing)
-                total_sent += 1
+                if send_alert(listing):
+                    total_sent += 1
+                    city = listing.get('city', '')
+                    if city:
+                        _today_alerts.setdefault(city, []).append({
+                            'price':    listing.get('price'),
+                            'rooms':    listing.get('rooms'),
+                            'sqm':      listing.get('sqm'),
+                            'post_url': listing.get('post_url', ''),
+                        })
         else:
             log.info('Facebook: no groups configured')
     except Exception as e:
@@ -116,7 +135,6 @@ def run_cycle():
 
     log.info(f'=== Cycle end — {total_sent} alerts sent ===')
 
-    global _last_alert_sent_at, _last_heartbeat_sent_at
     now = datetime.datetime.now()
     if total_sent > 0:
         _last_alert_sent_at = now
@@ -128,6 +146,64 @@ def run_cycle():
         if hours_since_alert >= 12 and hours_since_heartbeat >= 12:
             _last_heartbeat_sent_at = now
             _send_heartbeat()
+
+
+def run_daily_digest():
+    """Send end-of-day summary per city (at 22:00 Israel time = 19:00 UTC)."""
+    global _today_alerts
+    if not _today_alerts:
+        log.info('Daily digest: no alerts today')
+        return
+
+    import requests as _requests
+    token = os.environ.get('TELEGRAM_BOT_TOKEN')
+    chat_id = os.environ.get('TELEGRAM_CHAT_ID')
+    if not token or not chat_id:
+        _today_alerts = {}
+        return
+
+    for city, entries in _today_alerts.items():
+        count = len(entries)
+        color = city_color(city)
+        suffix = 'ות' if count != 1 else 'ה'
+        lines = [
+            f'📋 *סיכום יומי — {city}*',
+            f'{count} מודע{suffix} חדש{suffix} היום:',
+            '',
+        ]
+        for e in entries:
+            price_str = f'{e["price"]:,} ₪' if e.get('price') else '?'
+            rooms = e.get('rooms')
+            rooms_str = f'{int(rooms) if rooms and rooms == int(rooms) else rooms} חד' if rooms else '?'
+            parts = [price_str, rooms_str]
+            if e.get('sqm'):
+                parts.append(f'{e["sqm"]} מ"ר')
+            line = ' | '.join(parts)
+            if e.get('post_url'):
+                line += f' → [קישור]({e["post_url"]})'
+            lines.append(f'• {line}')
+
+        thread_id_str = get_city_thread_id(city)
+        thread_id = int(thread_id_str) if thread_id_str and thread_id_str != '0' else None
+
+        payload = {
+            'chat_id': chat_id,
+            'text': '\n'.join(lines),
+            'parse_mode': 'Markdown',
+            'disable_web_page_preview': True,
+        }
+        if thread_id:
+            payload['message_thread_id'] = thread_id
+
+        try:
+            _requests.post(f'https://api.telegram.org/bot{token}/sendMessage',
+                           json=payload, timeout=10)
+            log.info(f'Daily digest sent for {city} ({count} listings)')
+        except Exception as e:
+            log.error(f'Daily digest failed for {city}: {e}')
+
+    _today_alerts = {}
+    log.info('Daily digest complete')
 
 
 def main():
@@ -145,6 +221,7 @@ def main():
     # Schedule cycles every 15 minutes
     scheduler = BackgroundScheduler()
     scheduler.add_job(run_cycle, 'interval', minutes=15)
+    scheduler.add_job(run_daily_digest, 'cron', hour=19, minute=0, timezone='UTC')
     scheduler.start()
     log.info('Scheduler started — running every 15 minutes')
 

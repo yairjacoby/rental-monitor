@@ -115,6 +115,9 @@ def fetch_listings(city_id: str, region_id: str, area_id: str = None,
         return []
 
 
+_CONDITION_MAP = {1: 'חדש', 2: 'במצב טוב', 3: 'דורש שיפוץ'}
+
+
 def parse_listing(raw: dict, city_name: str) -> dict:
     """Parse a raw Yad2 marker into a normalized listing dict."""
     details = raw.get('additionalDetails', {})
@@ -123,6 +126,7 @@ def parse_listing(raw: dict, city_name: str) -> dict:
     address = raw.get('address', {})
     street = address.get('street', {}).get('text', '')
     neighborhood = address.get('neighborhood', {}).get('text', '')
+    house = address.get('house', {})
     token = raw.get('token', str(raw.get('orderId', '')))
 
     meta = raw.get('metaData', {})
@@ -138,8 +142,17 @@ def parse_listing(raw: dict, city_name: str) -> dict:
         'street':       street,
         'rooms':        float(rooms) if rooms else None,
         'price':        int(price) if price else None,
+        'sqm':          details.get('squareMeter'),
+        'floor':        house.get('floor'),
+        'condition':    _CONDITION_MAP.get(details.get('propertyCondition', {}).get('id')),
         'parking':      None,
         'safe_room':    None,
+        'balcony':      None,
+        'elevator':     None,
+        'ac':           None,
+        'storage':      None,
+        'furnished':    None,
+        'boiler':       None,
         'token':        token,
         'post_url':     f'https://www.yad2.co.il/item/{token}',
         'image_urls':   image_urls,
@@ -148,31 +161,33 @@ def parse_listing(raw: dict, city_name: str) -> dict:
 
 
 def fetch_listing_detail(token: str) -> dict:
-    """Fetch parking/safe_room from the full Yad2 listing page via __NEXT_DATA__ JSON."""
+    """Fetch full amenity data from the Yad2 listing page using Playwright (bypasses Radware)."""
     try:
-        resp = requests.get(
-            f'https://www.yad2.co.il/item/{token}',
-            headers={**HEADERS, 'Accept': 'text/html,application/xhtml+xml,*/*'},
-            impersonate='chrome124',
-            timeout=10
-        )
-        if resp.status_code != 200:
-            return {}
-        match = re.search(
-            r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>',
-            resp.text, re.DOTALL
-        )
-        if not match:
-            return {}
-        data = json.loads(match.group(1))
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            page.goto(f'https://www.yad2.co.il/item/{token}',
+                      wait_until='domcontentloaded', timeout=15000)
+            page.wait_for_selector('#__NEXT_DATA__', timeout=10000)
+            raw_json = page.locator('#__NEXT_DATA__').inner_text()
+            browser.close()
+        data = json.loads(raw_json)
         queries = (data.get('props', {}).get('pageProps', {})
                    .get('dehydratedState', {}).get('queries', []))
         if not queries:
             return {}
-        in_property = queries[0].get('state', {}).get('data', {}).get('inProperty', {})
+        in_prop = queries[0].get('state', {}).get('data', {}).get('inProperty', {})
+        log.info(f'Detail {token}: {in_prop}')
         return {
-            'parking':   in_property.get('includeParking'),
-            'safe_room': in_property.get('includeBuildingShelter'),
+            'parking':   in_prop.get('includeParking'),
+            'safe_room': in_prop.get('includeBuildingShelter'),
+            'balcony':   in_prop.get('includeBalcony'),
+            'elevator':  in_prop.get('includeElevator'),
+            'ac':        in_prop.get('includeAirConditioning'),
+            'storage':   in_prop.get('includeStorage'),
+            'furnished': in_prop.get('includeFurnished'),
+            'boiler':    in_prop.get('includeBoiler'),
         }
     except Exception as e:
         log.debug(f'fetch_listing_detail failed for {token}: {e}')

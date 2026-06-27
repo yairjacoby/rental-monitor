@@ -216,6 +216,28 @@ def clear_bot_state(chat_id: str):
         log.error(f'clear_bot_state error: {e}')
 
 
+def get_city_thread_id(city_name: str):
+    try:
+        result = get_client().table('monitor_state').select('value').eq(
+            'key', f'thread_{city_name}').execute()
+        if result.data:
+            return result.data[0]['value']
+        return None
+    except Exception as e:
+        log.error(f'get_city_thread_id error: {e}')
+        return None
+
+
+def set_city_thread_id(city_name: str, thread_id: str):
+    try:
+        get_client().table('monitor_state').upsert({
+            'key': f'thread_{city_name}',
+            'value': str(thread_id)
+        }, on_conflict='key').execute()
+    except Exception as e:
+        log.error(f'set_city_thread_id error: {e}')
+
+
 # ── Config Summary ────────────────────────────────────────────────────────────
 
 def get_config_summary() -> str:
