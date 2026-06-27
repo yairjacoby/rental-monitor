@@ -1,6 +1,6 @@
 # 🏠 Rental Monitor — Israel
 
-Real-time rental apartment monitor for Israel. Monitors Yad2 and public Facebook groups every 15 minutes. Sends Telegram alerts within minutes of a new listing being posted.
+Real-time rental apartment monitor for Israel. Monitors Yad2 and public Facebook groups every 15 minutes. Sends Telegram photo alerts within minutes of a new listing appearing.
 
 Built because listings disappear within hours — native Yad2 alerts are too slow, and Facebook groups have no native alerts at all.
 
@@ -8,99 +8,141 @@ Built because listings disappear within hours — native Yad2 alerts are too slo
 
 ## What It Does
 
-- Monitors Yad2 every 15 minutes via their internal JSON API (no browser needed)
-- Monitors public Facebook rental groups every 15 minutes via Playwright
-- Uses Claude API to parse unstructured Hebrew text from Facebook posts
-- Filters by city, neighborhood, rooms, price, and must-haves (parking, safe room)
-- Sends instant Telegram alerts for every new matching listing
-- Never alerts twice for the same listing (SQLite deduplication)
-- Fully configurable via Telegram bot commands — no code or GitHub changes needed
-
----
-
-## Architecture
-Python Service (Railway)
-
-├── APScheduler — fires every 15 minutes
-
-├── scraper_yad2.py — HTTP requests to Yad2 internal API (gw.yad2.co.il)
-
-├── scraper_facebook.py — Playwright scraper (public groups, no login)
-
-├── parser_claude.py — Claude API parses Hebrew free text (Facebook only)
-
-├── notifier_telegram.py — formats and sends Telegram alerts
-
-├── bot_telegram.py — Telegram bot for live configuration
-
-├── config_store.py — SQLite-backed config (cities, filters, groups)
-
-└── seen_store.py — SQLite deduplication store
-
-One service, one language, one Railway deployment.
-
----
-
-## Source APIs & Scraping
-
-### Yad2
-- **Method:** HTTP GET — no browser needed
-- **Endpoint:** `https://gw.yad2.co.il/realestate-feed/rent/map`
-- **Key parameters:** `city` (numeric ID), `area` (neighborhood ID), `minRooms`, `maxPrice`
-- **Example:** `?city=9700&area=54&minRooms=4&maxPrice=13000`
-- **City resolution:** Yad2 autocomplete API resolves city names to numeric IDs
-- **Bot integration:** `/add_city` command resolves city name → ID automatically
-
-### Madlan
-- **Method:** Playwright (headless Chromium)
-- **Why no API:** Listings are server-side rendered — no separate XHR/fetch call for listing data
-- **URL pattern:** `https://www.madlan.co.il/for-rent/{city-name}-ישראל?filters=_{minPrice}-{maxPrice}_{minRooms}-`
-- **Parsing:** Extract listing cards from rendered HTML
-
-### Facebook
-- **Method:** Playwright (headless Chromium)
-- **Groups:** Configured via `/add_group` Telegram command or config
-- **Parsing:** Claude API (claude-sonnet-4-6) parses unstructured Hebrew post text
-- **Login wall guard:** Skips group if login prompt detected
-
----
-
-## Telegram Bot Commands
-
-All configuration is done via Telegram — no code changes, no GitHub pushes needed.
-
-| Command | Description |
-|---|---|
-| `/status` | Show current config — cities, filters, groups |
-| `/add_city הוד השרון` | Add a city to monitor (bot resolves ID automatically) |
-| `/remove_city הוד השרון` | Remove a city |
-| `/add_neighborhood הוד השרון שכונה 1200` | Add neighborhood filter to a city |
-| `/set_price 13000` | Set max price in NIS |
-| `/set_rooms 4` | Set minimum rooms |
-| `/add_group https://facebook.com/groups/...` | Add Facebook group |
-| `/remove_group https://facebook.com/groups/...` | Remove Facebook group |
-| `/pause` | Pause monitoring |
-| `/resume` | Resume monitoring |
-| `/help` | List all commands |
-
-All changes require confirmation — bot asks you to reply `/confirm` or `/cancel`.
+- Monitors **Yad2** every 15 minutes via their internal JSON API
+- Monitors **public Facebook rental groups** via Playwright
+- Sends **photo album alerts** (up to 9 photos per listing) via Telegram
+- Shows **rich listing details**: price, rooms, sqm, floor, property condition, detection time
+- Shows **amenity icons** for features the apartment has (🚗 parking, 🛡 safe room, 🌿 balcony, 🛗 elevator, ❄️ AC, etc.)
+- Filters by city, neighborhood, min rooms, max price, and must-haves
+- Supports **multiple cities simultaneously** — each city gets a unique color dot and its own Telegram topic thread
+- Sends a **daily digest at 22:00** (Israel time) summarizing all listings found that day per city
+- Fully configurable via **Hebrew natural language** in Telegram — no code changes needed
+- Bot conversation state and all config **survive Railway restarts** (Supabase-backed)
 
 ---
 
 ## Alert Format
-🏠 New Rental — הוד השרון, שכונה 1200
 
-📡 Source: Yad2
-💰 12,500 ₪/month
+```
+🟡 דירה חדשה להשכרה — תל אביב, גני שרונה
+🕐 התגלתה היום ב-14:32
 
-🛏 4.5 rooms
+💰 14,000 ₪ לחודש
+🛏 4 חדרים
+📐 126 מ"ר | 🏢 קומה 26 | במצב טוב
+פיצ'רים: 🚗 | 🛡 | 🌿 | 🛗
 
-🚗 Parking: ✅
+📍 רחוב אוסוולדו ארניה
 
-🛡 Safe room: ✅
-📅 Entry: 01/08/2025
-"Spacious 4.5 room apartment in 1200 neighborhood with parking and safe room."
-👉 View listing
+👉 לצפייה במודעה
+```
+
+Photos (up to 9) are sent as an album above the message.
+
+---
+
+## Architecture
+
+```
+Python Service (Railway)
+│
+├── APScheduler
+│   ├── scrape cycle every 15 minutes
+│   └── daily digest at 19:00 UTC (22:00 Israel)
+│
+├── scraper_yad2.py       — Yad2 map API + Playwright detail fetch (amenities)
+├── scraper_facebook.py   — Playwright scraper (public groups)
+├── parser_claude.py      — Claude API parses Hebrew free text (Facebook)
+├── notifier_telegram.py  — formats and sends Telegram alerts + Topics threading
+├── bot_telegram.py       — Hebrew NLU bot for live configuration
+├── config_store.py       — Supabase-backed config (cities, filters, groups, state)
+└── seen_store.py         — SQLite deduplication
+```
+
+---
+
+## Source APIs
+
+### Yad2
+- **Map API:** `https://gw.yad2.co.il/realestate-feed/rent/map` — returns listings as map markers (no browser needed)
+- **Detail page:** `https://www.yad2.co.il/item/{token}` — fetched via Playwright + stealth to bypass Radware; extracts amenity data from `__NEXT_DATA__` JSON
+- **City/neighborhood resolution:** Yad2 autocomplete API resolves Hebrew names to numeric IDs automatically
+
+### Facebook
+- **Method:** Playwright (headless Chromium)
+- **Groups:** Configured via bot — any public Facebook rental group URL
+- **Parsing:** Claude API (claude-haiku) parses unstructured Hebrew post text into structured fields
+
+---
+
+## Telegram Bot
+
+All configuration is done by chatting with the bot in Hebrew (or English). No slash commands required — just write naturally.
+
+### Natural language examples
+| You write | Bot does |
+|---|---|
+| `הוסף עיר` | Starts add-city flow |
+| `סטטוס` | Shows current config |
+| `יכולות` | Shows full feature list |
+| `שנה מחיר ל-12000` | Updates max price immediately |
+| `עצור` | Pauses monitoring |
+| `המשך` | Resumes monitoring |
+
+### Slash commands (also work)
+| Command | Description |
+|---|---|
+| `/status` | Current config — cities, filters, groups |
+| `/features` | Full list of bot capabilities |
+| `/add_city` | Add a city to monitor |
+| `/remove_city` | Remove a city |
+| `/remove_neighborhood` | Remove a neighborhood filter |
+| `/set_price` | Set max price in NIS |
+| `/set_rooms` | Set minimum rooms |
+| `/must_have` | Toggle parking / safe room as required |
+| `/add_group` | Add Facebook group URL |
+| `/remove_group` | Remove Facebook group |
+| `/pause` / `/resume` | Pause or resume monitoring |
+| `/help` | Command list |
+
+### Add-city flow
+When you add a city the bot asks step-by-step:
+1. City name (auto-resolved to Yad2 ID)
+2. Max price
+3. Min rooms
+4. Specific neighborhood (optional)
+5. Must-haves: parking / safe room / both / neither
+6. Facebook groups to monitor for this city
+
+---
+
+## Telegram Topics (multi-city)
+
+Each city gets its own topic thread in a Telegram supergroup — alerts never mix.
+
+**Setup (one-time):**
+1. Create a Telegram group → enable **Topics** in group settings
+2. Add the bot as admin with **"Manage Topics"** permission
+3. Get the group chat ID (forward a group message to [@userinfobot](https://t.me/userinfobot))
+4. Set `TELEGRAM_CHAT_ID` in Railway to the negative group ID (e.g. `-1002345678901`)
+
+The bot auto-creates a topic thread for each city on its first alert. New cities added later get their own thread automatically.
+
+---
+
+## Daily Digest
+
+Every day at **22:00 Israel time** the bot sends a summary per city:
+
+```
+📋 סיכום יומי — תל אביב
+3 מודעות חדשות היום:
+• 14,000 ₪ | 4 חד | 126 מ"ר → קישור
+• 12,500 ₪ | 4 חד | 98 מ"ר → קישור
+• 15,000 ₪ | 5 חד → קישור
+```
+
+Sent to each city's own topic thread (if Topics enabled).
 
 ---
 
@@ -108,45 +150,26 @@ All changes require confirmation — bot asks you to reply `/confirm` or `/cance
 
 | Tool | Role |
 |---|---|
-| Python + requests | Yad2 API polling (no browser needed) |
-| Python + Playwright | Facebook scraping (headless Chromium) |
-| Claude API (claude-sonnet-4-6) | Hebrew free-text parsing for Facebook posts |
-| APScheduler | Runs every 15 minutes inside the Python process |
-| python-telegram-bot | Alerts + bot command handling |
-| Railway | Hosting (free tier, $5 credit/month) |
-| SQLite | Config store + deduplication |
-
----
-
-## Configuration
-
-Config lives in SQLite — managed entirely via Telegram bot commands. Initial setup:
-/add_city הוד השרון
-
-/add_neighborhood הוד השרון שכונה 1200
-
-/set_price 13000
-
-/set_rooms 4
-
-/add_group https://www.facebook.com/share/g/1EWSUWPM7i/
-
-/add_group https://www.facebook.com/share/g/1ExG6YipWn/
-
-/add_group https://www.facebook.com/share/g/1DLdauYUWD/
-
-/add_group https://www.facebook.com/share/g/1DkXixfNZo/
-
-/add_group https://www.facebook.com/share/g/18nvrayqZp/
+| Python + curl_cffi | Yad2 map API (Chrome impersonation) |
+| Playwright + stealth | Yad2 detail pages + Facebook scraping |
+| Claude API (Haiku) | Hebrew NLU intent classification + Facebook text parsing |
+| APScheduler | 15-min scrape cycle + daily digest |
+| python-telegram-bot | Alerts + inline keyboard bot |
+| Supabase (PostgreSQL) | Config, bot state, seen listings, city threads |
+| SQLite | Local deduplication store |
+| Railway | Hosting |
 
 ---
 
 ## Environment Variables
-ANTHROPIC_API_KEY=
 
+```
 TELEGRAM_BOT_TOKEN=
-
-TELEGRAM_CHAT_ID=
+TELEGRAM_CHAT_ID=        # private chat ID or supergroup ID (negative)
+ANTHROPIC_API_KEY=
+SUPABASE_URL=
+SUPABASE_KEY=
+```
 
 Never commit `.env` — it is in `.gitignore`.
 
@@ -159,44 +182,32 @@ cd monitor
 pip install -r requirements.txt
 playwright install chromium
 cp ../.env.example ../.env
-# Fill in .env values
+# Fill in .env with your credentials
 python main.py
 ```
+
+Requires Python 3.11+.
 
 ---
 
 ## Project Structure
+
+```
 rental-monitor/
-
-├── .env                      # secrets — never committed
-
-├── .env.example              # template
-
-├── config.json               # legacy — replaced by SQLite config store
-
+├── .env                    # secrets — never committed
+├── Dockerfile              # Railway deployment (includes Playwright + Chromium)
 ├── README.md
-
 └── monitor/
-
-├── main.py               # scheduler + orchestrator
-
-├── scraper_yad2.py       # Yad2 HTTP API scraper
-
-├── scraper_madlan.py     # Madlan Playwright scraper
-
-├── scraper_facebook.py   # Facebook Playwright scraper
-
-├── parser_claude.py      # Claude API Hebrew parser
-
-├── notifier_telegram.py  # Telegram alert sender
-
-├── bot_telegram.py       # Telegram bot command handler
-
-├── config_store.py       # SQLite config manager
-
-├── seen_store.py         # SQLite deduplication
-
-└── requirements.txt
+    ├── main.py             # scheduler + orchestrator
+    ├── scraper_yad2.py     # Yad2 API + Playwright detail fetch
+    ├── scraper_facebook.py # Facebook Playwright scraper
+    ├── parser_claude.py    # Claude API Hebrew parser
+    ├── notifier_telegram.py# Telegram alert formatter + sender
+    ├── bot_telegram.py     # Hebrew NLU Telegram bot
+    ├── config_store.py     # Supabase config + state manager
+    ├── seen_store.py       # SQLite deduplication
+    └── requirements.txt
+```
 
 ---
 
@@ -204,10 +215,11 @@ rental-monitor/
 
 | Component | Cost |
 |---|---|
-| Claude API | ~$1-3/month |
-| Railway | Free tier ($5 credit/month) |
+| Claude API | ~$1–3/month |
+| Supabase | Free tier |
+| Railway | ~$5/month |
 | Everything else | Free |
 
 ---
 
-*Personal project. Not affiliated with Yad2, Madlan, or Facebook.*
+*Personal project. Not affiliated with Yad2 or Facebook.*
