@@ -6,6 +6,7 @@ Also runs the Telegram bot for live configuration.
 
 import logging
 import os
+import json
 import threading
 import datetime
 from dotenv import load_dotenv
@@ -66,12 +67,21 @@ def send_expansion_suggestion(city_name: str):
         return
     message = (
         f"🔍 לא נמצאו דירות חדשות בשכונות המוגדרות ב{city_name}.\n"
-        f"האם להרחיב את החיפוש לכל {city_name}?\n\n"
-        f"השתמש ב /add\\_neighborhood להוספת שכונות נוספות."
+        f"האם להרחיב את החיפוש לכל {city_name}?"
     )
     _requests.post(
         f'https://api.telegram.org/bot{token}/sendMessage',
-        json={'chat_id': chat_id, 'text': message, 'parse_mode': 'Markdown'},
+        json={
+            'chat_id': chat_id,
+            'text': message,
+            'parse_mode': 'Markdown',
+            'reply_markup': json.dumps({
+                'inline_keyboard': [[
+                    {'text': '✅ כן, הרחב', 'callback_data': f'expand_search|{city_name}'},
+                    {'text': '❌ לא תודה', 'callback_data': 'expand_search|dismiss'},
+                ]]
+            }),
+        },
         timeout=10
     )
 

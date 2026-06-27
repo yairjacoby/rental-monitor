@@ -28,6 +28,17 @@ AMENITY_LABELS = [
     ('boiler',    '☀️ דוד שמש'),
 ]
 
+AMENITY_ICONS = [
+    ('parking',   '🚗'),
+    ('safe_room', '🛡'),
+    ('balcony',   '🌿'),
+    ('elevator',  '🛗'),
+    ('ac',        '❄️'),
+    ('storage',   '📦'),
+    ('furnished', '🛋'),
+    ('boiler',    '☀️'),
+]
+
 
 def city_color(city_name: str) -> str:
     return CITY_COLORS[hash(city_name) % len(CITY_COLORS)]
@@ -72,9 +83,10 @@ def format_message(listing: dict) -> str:
     sqm       = listing.get('sqm')
     floor     = listing.get('floor')
     condition = listing.get('condition')
-    entry_date = listing.get('entry_date') or parsed.get('entry_date')
-    summary   = parsed.get('summary', '')
-    post_url  = listing.get('post_url', '')
+    entry_date   = listing.get('entry_date') or parsed.get('entry_date')
+    summary      = parsed.get('summary', '')
+    post_url     = listing.get('post_url', '')
+    detected_at  = listing.get('detected_at', '')
 
     city         = listing.get('city') or parsed.get('city') or ''
     neighborhood = listing.get('neighborhood') or parsed.get('neighborhood') or ''
@@ -110,25 +122,23 @@ def format_message(listing: dict) -> str:
         meta_parts.append(condition)
     meta_line = ' | '.join(meta_parts)
 
-    amenity_lines = []
-    for key, label in AMENITY_LABELS:
-        val = listing.get(key)
-        if val is True:
-            amenity_lines.append(f'{label}: ✅')
-        elif val is False:
-            amenity_lines.append(f'{label}: ❌')
+    present_icons = [icon for key, icon in AMENITY_ICONS if listing.get(key) is True]
+    features_line = f"פיצ'רים: {' | '.join(present_icons)}" if present_icons else ''
 
     lines = [
         f"{color} דירה חדשה להשכרה — {location}",
-        "",
-        price_line,
-        rooms_line,
     ]
+    if detected_at:
+        lines.append(f"🕐 התגלתה היום ב-{detected_at}")
+    lines.append("")
+    lines.append(price_line)
+    lines.append(rooms_line)
 
     if meta_line:
         lines.append(meta_line)
 
-    lines.extend(amenity_lines)
+    if features_line:
+        lines.append(features_line)
 
     if street:
         lines.append(f"📍 {street}")

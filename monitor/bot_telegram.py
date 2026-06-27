@@ -502,12 +502,58 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         )
 
+    elif action == 'expand_search':
+        if value == 'dismiss':
+            await qreply(query, '✅ בסדר, ממשיכים עם השכונות הנוכחיות.')
+        else:
+            city_name = value
+            neighborhoods = get_neighborhoods(city_name)
+            for n in neighborhoods:
+                remove_neighborhood(city_name, n['name'])
+            await qreply(query, f'✅ הורחב — עכשיו מחפש בכל {city_name}.')
+
     elif action == 'confirm':
         if value == 'no':
             clear_state(chat_id)
             await qreply(query, '❌ בוטל.')
         else:
             await _do_confirmation(query, chat_id, state)
+
+
+# ── /features ─────────────────────────────────────────────────────────────────
+
+@owner_only
+async def cmd_features(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await reply(update, (
+        '*🤖 ניטור דירות — כל היכולות*\n\n'
+        '*🔍 מקורות חיפוש*\n'
+        '• יד2 — ניטור אוטומטי כל 15 דקות\n'
+        '• פייסבוק — קבוצות השכרה מרובות\n\n'
+        '*🏙 ריבוי ערים*\n'
+        '• עקיבה אחר מספר ערים במקביל\n'
+        '• פילטר לפי שכונה ספציפית\n'
+        '• מחיר מקסימאלי שונה לכל עיר\n'
+        '• נקודת צבע ייחודית לכל עיר 🔴🟠🟡🟢\n\n'
+        '*📸 התראות עשירות*\n'
+        '• עד 9 תמונות לדירה\n'
+        '• מחיר, חדרים, שטח, קומה, מצב הנכס\n'
+        '• פיצ\'רים: 🚗 חניה | 🛡 ממ"ד | 🌿 מרפסת | 🛗 מעלית | ❄️ מזגן\n'
+        '• שעת גילוי המודעה\n\n'
+        '*⚙️ פילטרים*\n'
+        '• מינימום חדרים\n'
+        '• מחיר מקסימאלי\n'
+        '• שכונות ספציפיות\n'
+        '• חניה / ממ"ד כחובה\n\n'
+        '*💬 ניהול בשפה חופשית*\n'
+        '• עברית ואנגלית — כותב מה שבא לך\n'
+        '• כפתורים אינטראקטיביים\n'
+        '• הגדרות שמורות אפילו אחרי הפעלה מחדש\n\n'
+        '*📋 סיכום יומי*\n'
+        '• כל ערב ב-22:00 — סיכום לפי עיר\n'
+        '• מחיר, חדרים, שטח + קישור לכל דירה\n\n'
+        '*💡 פקודות עיקריות*\n'
+        '/add\\_city /status /features /must\\_have /pause'
+    ))
 
 
 # ── /help ─────────────────────────────────────────────────────────────────────
@@ -527,6 +573,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         '/pause — השהיית הניטור\n'
         '/resume — המשך הניטור\n'
         '/status — הגדרות נוכחיות\n'
+        '/features — כל היכולות של הבוט\n'
         '/cancel — ביטול פעולה\n'
         '/help — הודעה זו\n\n'
         '💡 *אפשר גם לכתוב בשפה חופשית בעברית או אנגלית*'
@@ -888,6 +935,7 @@ def build_bot() -> Application:
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
     app.add_handler(CommandHandler('help', cmd_help))
+    app.add_handler(CommandHandler('features', cmd_features))
     app.add_handler(CommandHandler('status', cmd_status))
     app.add_handler(CommandHandler('add_city', cmd_add_city))
     app.add_handler(CommandHandler('remove_city', cmd_remove_city))

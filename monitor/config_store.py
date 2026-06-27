@@ -241,30 +241,43 @@ def set_city_thread_id(city_name: str, thread_id: str):
 # ── Config Summary ────────────────────────────────────────────────────────────
 
 def get_config_summary() -> str:
+    _CITY_COLORS = ['🔴', '🟠', '🟡', '🟢', '🔵', '🟣', '🟤', '⚫']
+
+    def _color(name):
+        return _CITY_COLORS[hash(name) % len(_CITY_COLORS)]
+
     cities = get_cities()
     groups = get_facebook_groups()
     filters = get_all_filters()
     paused = is_paused()
 
-    lines = ['📋 Current config:\n']
-    lines.append(f'⏸ Status: {"PAUSED" if paused else "✅ Active"}')
-    lines.append(f'🛏 Min rooms: {filters.get("rooms_min", "4")}')
-    lines.append(f'🚗 Parking required: {filters.get("must_have_parking", "false")}')
-    lines.append(f'🛡 Safe room required: {filters.get("must_have_safe_room", "false")}')
+    parking_on = filters.get('must_have_parking') == 'true'
+    safe_room_on = filters.get('must_have_safe_room') == 'true'
 
-    lines.append('\n🏙 Cities:')
+    lines = ['*📋 סטטוס ניטור דירות*\n']
+    lines.append('*⚙️ הגדרות כלליות*')
+    lines.append(f'▫️ מצב: {"⏸ מושהה" if paused else "✅ פעיל"}')
+    lines.append(f'▫️ מינ\' חדרים: {filters.get("rooms_min", "4")}')
+    lines.append(f'▫️ חניה חובה: {"✅" if parking_on else "❌"}')
+    lines.append(f'▫️ ממ"ד חובה: {"✅" if safe_room_on else "❌"}')
+
+    lines.append('\n*🏙 ערים במעקב*')
     if not cities:
-        lines.append('  None configured')
+        lines.append('אין ערים מוגדרות')
     for city in cities:
-        price = f'{city["max_price"]:,} ₪' if city.get('max_price') else 'no limit'
+        color = _color(city['name'])
+        price = f'עד {city["max_price"]:,} ₪' if city.get('max_price') else 'ללא הגבלה'
         neighborhoods = get_neighborhoods(city['name'])
-        nbhd_str = ', '.join(n['name'] for n in neighborhoods) if neighborhoods else 'all'
-        lines.append(f'  • {city["name"]} — max {price} — neighborhoods: {nbhd_str}')
+        nbhd_str = ', '.join(n['name'] for n in neighborhoods) if neighborhoods else 'כל העיר'
+        lines.append(f'{color} *{city["name"]}*')
+        lines.append(f'   💰 {price}')
+        lines.append(f'   📍 {nbhd_str}')
 
-    lines.append('\n👥 Facebook groups:')
+    lines.append('\n*👥 קבוצות פייסבוק*')
     if not groups:
-        lines.append('  None configured')
+        lines.append('אין קבוצות מוגדרות')
     for i, url in enumerate(groups, 1):
-        lines.append(f'  {i}. {url}')
+        label = url.replace('https://www.facebook.com/', 'fb/')
+        lines.append(f'{i}\\. {label}')
 
     return '\n'.join(lines)

@@ -10,6 +10,7 @@ import hashlib
 import json
 import re
 import time
+import datetime
 from curl_cffi import requests
 from typing import Optional
 from seen_store import is_seen, mark_seen
@@ -156,6 +157,7 @@ def parse_listing(raw: dict, city_name: str) -> dict:
         'token':        token,
         'post_url':     f'https://www.yad2.co.il/item/{token}',
         'image_urls':   image_urls,
+        'detected_at':  datetime.datetime.now().strftime('%H:%M'),
         'raw':          raw,
     }
 
@@ -164,18 +166,22 @@ def fetch_listing_detail(token: str) -> dict:
     """Fetch full amenity data from the Yad2 listing page using Playwright (bypasses Radware)."""
     try:
         from playwright.sync_api import sync_playwright
+        log.info(f'Playwright: loading {token}')
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             page = browser.new_page()
             page.goto(f'https://www.yad2.co.il/item/{token}',
                       wait_until='domcontentloaded', timeout=15000)
+            log.info(f'Playwright: page loaded for {token}')
             page.wait_for_selector('#__NEXT_DATA__', timeout=10000)
+            log.info(f'Playwright: found __NEXT_DATA__ for {token}')
             raw_json = page.locator('#__NEXT_DATA__').inner_text()
             browser.close()
         data = json.loads(raw_json)
         queries = (data.get('props', {}).get('pageProps', {})
                    .get('dehydratedState', {}).get('queries', []))
         if not queries:
+            log.warning(f'Playwright: no queries in __NEXT_DATA__ for {token}')
             return {}
         in_prop = queries[0].get('state', {}).get('data', {}).get('inProperty', {})
         log.info(f'Detail {token}: {in_prop}')
@@ -190,7 +196,7 @@ def fetch_listing_detail(token: str) -> dict:
             'boiler':    in_prop.get('includeBoiler'),
         }
     except Exception as e:
-        log.debug(f'fetch_listing_detail failed for {token}: {e}')
+        log.warning(f'fetch_listing_detail failed for {token}: {e}')
         return {}
 
 
