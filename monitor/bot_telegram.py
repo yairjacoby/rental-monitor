@@ -152,6 +152,10 @@ KEYWORD_INTENTS = {
     'רוצה לראות סטטוס': 'status',
     'status': 'status', 'settings': 'status', 'show config': 'status',
     'what is set': 'status', 'current config': 'status', 'show settings': 'status',
+    # features
+    'יכולות': 'features', 'פיצ\'רים': 'features', 'מה הבוט יכול': 'features',
+    'כל היכולות': 'features', 'מה יש לבוט': 'features', 'אפשרויות': 'features',
+    'features': 'features', 'what can the bot do': 'features', 'capabilities': 'features',
     # help
     'עזרה': 'help', 'פקודות': 'help', 'מה אפשר': 'help', 'תפריט': 'help',
     'help': 'help', 'commands': 'help', 'what can you do': 'help', 'menu': 'help',
@@ -160,7 +164,7 @@ KEYWORD_INTENTS = {
 INTENT_SYSTEM = (
     'Classify the user message into one intent. Reply ONLY with valid JSON, nothing else.\n'
     'Intents: add_city, remove_city, remove_neighborhood, set_price, set_rooms, '
-    'add_group, remove_group, pause, resume, status, help, unknown\n'
+    'add_group, remove_group, pause, resume, status, features, help, unknown\n'
     'Include extracted values when present.\n'
     'Examples:\n'
     '"הסר את תל אביב" → {"intent":"remove_city","city_name":"תל אביב"}\n'
@@ -200,7 +204,9 @@ MAIN_MENU_MARKUP = kb(
 
 
 async def _route_intent(update: Update, context, intent: str, intent_data: dict):
-    if intent == 'add_city':
+    if intent == 'features':
+        await cmd_features(update, context)
+    elif intent == 'add_city':
         await cmd_add_city(update, context)
     elif intent == 'remove_city':
         await cmd_remove_city(update, context)

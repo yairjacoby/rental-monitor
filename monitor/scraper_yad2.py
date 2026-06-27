@@ -11,6 +11,7 @@ import json
 import re
 import time
 import datetime
+import zoneinfo
 from curl_cffi import requests
 from typing import Optional
 from seen_store import is_seen, mark_seen
@@ -157,7 +158,7 @@ def parse_listing(raw: dict, city_name: str) -> dict:
         'token':        token,
         'post_url':     f'https://www.yad2.co.il/item/{token}',
         'image_urls':   image_urls,
-        'detected_at':  datetime.datetime.now().strftime('%H:%M'),
+        'detected_at':  datetime.datetime.now(zoneinfo.ZoneInfo('Asia/Jerusalem')).strftime('%H:%M'),
         'raw':          raw,
     }
 
@@ -166,14 +167,20 @@ def fetch_listing_detail(token: str) -> dict:
     """Fetch full amenity data from the Yad2 listing page using Playwright (bypasses Radware)."""
     try:
         from playwright.sync_api import sync_playwright
+        try:
+            from playwright_stealth import stealth_sync as _stealth_sync
+        except ImportError:
+            _stealth_sync = None
         log.info(f'Playwright: loading {token}')
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             page = browser.new_page()
+            if _stealth_sync:
+                _stealth_sync(page)
             page.goto(f'https://www.yad2.co.il/item/{token}',
-                      wait_until='domcontentloaded', timeout=15000)
+                      wait_until='domcontentloaded', timeout=20000)
             log.info(f'Playwright: page loaded for {token}')
-            page.wait_for_selector('#__NEXT_DATA__', timeout=10000)
+            page.wait_for_selector('#__NEXT_DATA__', timeout=12000)
             log.info(f'Playwright: found __NEXT_DATA__ for {token}')
             raw_json = page.locator('#__NEXT_DATA__').inner_text()
             browser.close()
