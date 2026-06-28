@@ -117,7 +117,14 @@ def fetch_listings(city_id: str, region_id: str, area_id: str = None,
         return []
 
 
-_CONDITION_MAP = {1: 'חדש', 2: 'במצב טוב', 3: 'דורש שיפוץ'}
+_CONDITION_MAP = {
+    1: 'חדש מקבלן',
+    2: 'משופץ',
+    3: 'במצב שמור',
+    4: 'במצב טוב',
+    5: 'דורש שיפוץ',
+    6: 'חדש (גרו בנכס)',
+}
 
 
 def parse_listing(raw: dict, city_name: str) -> dict:
@@ -193,9 +200,16 @@ def _extract_in_property_from_html(html: str, token: str) -> dict:
                    .get('dehydratedState', {}).get('queries', []))
         if not queries:
             return {}
-        in_prop = queries[0].get('state', {}).get('data', {}).get('inProperty', {})
-        log.info(f'Detail {token}: {in_prop}')
-        return _parse_in_property(in_prop)
+        item_data = queries[0].get('state', {}).get('data', {})
+        in_prop = item_data.get('inProperty', {})
+        result = _parse_in_property(in_prop)
+        # Use condition text from detail page (more accurate than map API ID-only)
+        cond_text = (item_data.get('additionalDetails', {})
+                     .get('propertyCondition', {}).get('text'))
+        if cond_text:
+            result['condition'] = cond_text
+        log.info(f'Detail {token}: {result}')
+        return result
     except Exception as e:
         log.warning(f'__NEXT_DATA__ parse error for {token}: {e}')
         return {}
