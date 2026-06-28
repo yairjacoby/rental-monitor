@@ -178,8 +178,8 @@ def scrape_all_groups(config: dict) -> list:
 
         page = context.new_page()
         try:
-            from playwright_stealth import Stealth
-            Stealth().apply_stealth_sync(page)
+            from playwright_stealth import stealth_sync as _stealth_sync
+            _stealth_sync(page)
             log.info('Playwright stealth applied')
         except Exception as e:
             log.warning(f'playwright_stealth not available: {e}')
