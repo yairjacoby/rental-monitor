@@ -163,14 +163,67 @@ def parse_listing(raw: dict, city_name: str) -> dict:
     }
 
 
+def _parse_in_property(in_prop: dict) -> dict:
+    """Map Yad2 inProperty fields to our listing keys."""
+    return {
+        'parking':   in_prop.get('includeParking'),
+        'safe_room': in_prop.get('includeSecurityRoom'),
+        'balcony':   in_prop.get('includeBalcony'),
+        'elevator':  in_prop.get('includeElevator'),
+        'ac':        in_prop.get('includeAirconditioner'),
+        'storage':   in_prop.get('includeWarehouse'),
+        'furnished': in_prop.get('includeFurnished'),
+        'boiler':    in_prop.get('includeBoiler'),
+    }
+
+
+def _extract_in_property_from_html(html: str, token: str) -> dict:
+    """Pull inProperty out of __NEXT_DATA__ embedded in HTML."""
+    if '__NEXT_DATA__' not in html:
+        return {}
+    m = re.search(
+        r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>',
+        html, re.DOTALL
+    )
+    if not m:
+        return {}
+    try:
+        data = json.loads(m.group(1))
+        queries = (data.get('props', {}).get('pageProps', {})
+                   .get('dehydratedState', {}).get('queries', []))
+        if not queries:
+            return {}
+        in_prop = queries[0].get('state', {}).get('data', {}).get('inProperty', {})
+        log.info(f'Detail {token}: {in_prop}')
+        return _parse_in_property(in_prop)
+    except Exception as e:
+        log.warning(f'__NEXT_DATA__ parse error for {token}: {e}')
+        return {}
+
+
 def fetch_listing_detail(token: str) -> dict:
-    """Fetch full amenity data from the Yad2 listing page using Playwright (bypasses Radware)."""
+    """Fetch amenity data for a listing. Tries curl_cffi first, falls back to Playwright."""
+    url = f'https://www.yad2.co.il/item/{token}'
+
+    # ── Attempt 1: curl_cffi (fast; works unless Railway IP is Radware-blocked) ──
+    try:
+        resp = requests.get(url, headers={**HEADERS, 'Accept': 'text/html'}, impersonate='chrome124', timeout=12)
+        result = _extract_in_property_from_html(resp.text, token)
+        if result:
+            log.info(f'Detail {token}: fetched via curl_cffi')
+            return result
+        log.info(f'Detail {token}: curl_cffi got no __NEXT_DATA__ (Radware block?) — trying Playwright')
+    except Exception as e:
+        log.info(f'Detail {token}: curl_cffi failed ({e}) — trying Playwright')
+
+    # ── Attempt 2: Playwright with stealth (bypasses Radware JS challenge) ────────
     try:
         from playwright.sync_api import sync_playwright
         try:
             from playwright_stealth import stealth_sync as _stealth_sync
         except ImportError:
             _stealth_sync = None
+
         log.info(f'Playwright: loading {token}')
         with sync_playwright() as p:
             browser = p.chromium.launch(
@@ -193,13 +246,12 @@ def fetch_listing_detail(token: str) -> dict:
             )
             if _stealth_sync:
                 _stealth_sync(page)
-            page.goto(f'https://www.yad2.co.il/item/{token}',
-                      wait_until='domcontentloaded', timeout=20000)
+            page.goto(url, wait_until='domcontentloaded', timeout=20000)
             log.info(f'Playwright: page loaded for {token} — title={page.title()!r}')
             page.wait_for_selector('#__NEXT_DATA__', timeout=12000)
-            log.info(f'Playwright: found __NEXT_DATA__ for {token}')
             raw_json = page.locator('#__NEXT_DATA__').inner_text()
             browser.close()
+
         data = json.loads(raw_json)
         queries = (data.get('props', {}).get('pageProps', {})
                    .get('dehydratedState', {}).get('queries', []))
@@ -207,17 +259,8 @@ def fetch_listing_detail(token: str) -> dict:
             log.warning(f'Playwright: no queries in __NEXT_DATA__ for {token}')
             return {}
         in_prop = queries[0].get('state', {}).get('data', {}).get('inProperty', {})
-        log.info(f'Detail {token}: {in_prop}')
-        return {
-            'parking':   in_prop.get('includeParking'),
-            'safe_room': in_prop.get('includeBuildingShelter'),
-            'balcony':   in_prop.get('includeBalcony'),
-            'elevator':  in_prop.get('includeElevator'),
-            'ac':        in_prop.get('includeAirConditioning'),
-            'storage':   in_prop.get('includeStorage'),
-            'furnished': in_prop.get('includeFurnished'),
-            'boiler':    in_prop.get('includeBoiler'),
-        }
+        log.info(f'Detail {token} via Playwright: {in_prop}')
+        return _parse_in_property(in_prop)
     except Exception as e:
         log.warning(f'fetch_listing_detail failed for {token}: {e}')
         return {}
