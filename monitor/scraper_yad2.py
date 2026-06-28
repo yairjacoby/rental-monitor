@@ -173,13 +173,29 @@ def fetch_listing_detail(token: str) -> dict:
             _stealth_sync = None
         log.info(f'Playwright: loading {token}')
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
+            browser = p.chromium.launch(
+                headless=True,
+                args=['--disable-blink-features=AutomationControlled',
+                      '--no-sandbox', '--disable-dev-shm-usage'],
+            )
+            context = browser.new_context(
+                user_agent=(
+                    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
+                    'AppleWebKit/537.36 (KHTML, like Gecko) '
+                    'Chrome/124.0.0.0 Safari/537.36'
+                ),
+                viewport={'width': 1280, 'height': 800},
+                locale='he-IL',
+            )
+            page = context.new_page()
+            page.add_init_script(
+                "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+            )
             if _stealth_sync:
                 _stealth_sync(page)
             page.goto(f'https://www.yad2.co.il/item/{token}',
                       wait_until='domcontentloaded', timeout=20000)
-            log.info(f'Playwright: page loaded for {token}')
+            log.info(f'Playwright: page loaded for {token} — title={page.title()!r}')
             page.wait_for_selector('#__NEXT_DATA__', timeout=12000)
             log.info(f'Playwright: found __NEXT_DATA__ for {token}')
             raw_json = page.locator('#__NEXT_DATA__').inner_text()

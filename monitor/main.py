@@ -12,7 +12,7 @@ import datetime
 from dotenv import load_dotenv
 from apscheduler.schedulers.background import BackgroundScheduler
 from seen_store import init_db
-from config_store import init_config_db, is_paused, get_config_summary
+from config_store import init_config_db, is_paused, get_config_summary, get_today_alerts, save_today_alerts, clear_today_alerts
 from scraper_yad2 import scrape_yad2
 from scraper_facebook import scrape_all_groups
 from parser_claude import parse_listings
@@ -32,7 +32,7 @@ log = logging.getLogger(__name__)
 _expansion_cooldown = {}  # city_name -> datetime of last send
 _last_alert_sent_at: datetime.datetime = None
 _last_heartbeat_sent_at: datetime.datetime = None
-_today_alerts: dict = {}  # city → list of {price, rooms, sqm, post_url}
+_today_alerts: dict = {}  # city → list of {price, rooms, sqm, post_url} — persisted in Supabase
 
 
 def _send_heartbeat():
@@ -112,6 +112,7 @@ def run_cycle():
                         'sqm':      listing.get('sqm'),
                         'post_url': listing.get('post_url', ''),
                     })
+                    save_today_alerts(_today_alerts)
         # Suggest expanding search if no results found
         for city in zero_result_cities:
             send_expansion_suggestion(city)
@@ -138,6 +139,7 @@ def run_cycle():
                             'sqm':      listing.get('sqm'),
                             'post_url': listing.get('post_url', ''),
                         })
+                        save_today_alerts(_today_alerts)
         else:
             log.info('Facebook: no groups configured')
     except Exception as e:
@@ -213,14 +215,20 @@ def run_daily_digest():
             log.error(f'Daily digest failed for {city}: {e}')
 
     _today_alerts = {}
+    clear_today_alerts()
     log.info('Daily digest complete')
 
 
 def main():
+    global _today_alerts
     # Init databases
     init_db()
     init_config_db()
     log.info('Databases initialized')
+
+    # Restore today's alerts from Supabase (survives Railway restarts)
+    _today_alerts = get_today_alerts()
+    log.info(f'Restored today_alerts: {sum(len(v) for v in _today_alerts.values())} entries across {len(_today_alerts)} cities')
 
     # Log current config on startup
     log.info(get_config_summary())

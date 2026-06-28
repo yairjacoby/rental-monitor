@@ -216,6 +216,36 @@ def clear_bot_state(chat_id: str):
         log.error(f'clear_bot_state error: {e}')
 
 
+def get_today_alerts() -> dict:
+    try:
+        result = get_client().table('monitor_state').select('value').eq(
+            'key', 'today_alerts').execute()
+        if result.data:
+            return json.loads(result.data[0]['value'])
+        return {}
+    except Exception as e:
+        log.error(f'get_today_alerts error: {e}')
+        return {}
+
+
+def save_today_alerts(data: dict):
+    try:
+        get_client().table('monitor_state').upsert({
+            'key': 'today_alerts',
+            'value': json.dumps(data, ensure_ascii=False)
+        }, on_conflict='key').execute()
+    except Exception as e:
+        log.error(f'save_today_alerts error: {e}')
+
+
+def clear_today_alerts():
+    try:
+        get_client().table('monitor_state').delete().eq(
+            'key', 'today_alerts').execute()
+    except Exception as e:
+        log.error(f'clear_today_alerts error: {e}')
+
+
 def get_city_thread_id(city_name: str):
     try:
         result = get_client().table('monitor_state').select('value').eq(
