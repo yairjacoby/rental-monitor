@@ -314,15 +314,27 @@ def fetch_listing_detail(token: str) -> dict:
         return {}
 
 
+_detail_probe_done = False
+
+
 def scrape_yad2() -> tuple:
     """
     Main entry point. Scrapes all configured cities and neighborhoods.
     Returns (new_listings, cities_with_no_results).
     """
+    global _detail_probe_done
     cities = get_cities()
     if not cities:
         log.warning('No cities configured — skipping Yad2 scrape')
         return [], []
+
+    # One-time probe on first run: verify fetch_listing_detail works on this host
+    if not _detail_probe_done:
+        _detail_probe_done = True
+        _probe_token = 't5t56vna'
+        log.info(f'DETAIL_PROBE: testing fetch_listing_detail on this host (token={_probe_token})')
+        _probe_result = fetch_listing_detail(_probe_token)
+        log.info(f'DETAIL_PROBE result: {_probe_result}')
 
     rooms_min = float(get_filter('rooms_min', '4'))
     require_parking   = get_filter('must_have_parking',  'false') == 'true'
