@@ -354,6 +354,11 @@ def scrape_yad2() -> tuple:
             min_rooms=rooms_min, max_price=max_price
         )
 
+        # Log full first marker to reveal all available fields (runs once per city)
+        if raw_listings:
+            import json as _json
+            log.info(f'{city_name} FULL_MARKER: {_json.dumps(raw_listings[0], ensure_ascii=False, default=str)}')
+
         new_listings_this_city = []
 
         for raw in raw_listings:
