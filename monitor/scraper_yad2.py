@@ -143,6 +143,10 @@ def parse_listing(raw: dict, city_name: str) -> dict:
     if not image_urls and meta.get('coverImage'):
         image_urls = [meta['coverImage']]
 
+    # Try to get amenities directly from the map API marker (gw.yad2.co.il — no Radware)
+    in_prop_raw = raw.get('inProperty') or {}
+    amenities = _parse_in_property(in_prop_raw)
+
     return {
         'id':           make_listing_id(raw),
         'source':       'yad2',
@@ -154,14 +158,14 @@ def parse_listing(raw: dict, city_name: str) -> dict:
         'sqm':          details.get('squareMeter'),
         'floor':        house.get('floor'),
         'condition':    _CONDITION_MAP.get(details.get('propertyCondition', {}).get('id')),
-        'parking':      None,
-        'safe_room':    None,
-        'balcony':      None,
-        'elevator':     None,
-        'ac':           None,
-        'storage':      None,
-        'furnished':    None,
-        'boiler':       None,
+        'parking':      amenities.get('parking'),
+        'safe_room':    amenities.get('safe_room'),
+        'balcony':      amenities.get('balcony'),
+        'elevator':     amenities.get('elevator'),
+        'ac':           amenities.get('ac'),
+        'storage':      amenities.get('storage'),
+        'furnished':    amenities.get('furnished'),
+        'boiler':       amenities.get('boiler'),
         'token':        token,
         'post_url':     f'https://www.yad2.co.il/item/{token}',
         'image_urls':   image_urls,
@@ -320,6 +324,12 @@ def scrape_yad2() -> tuple:
             min_rooms=rooms_min, max_price=max_price
         )
 
+        # One-time log per city to reveal map API marker structure
+        if raw_listings:
+            first = raw_listings[0]
+            has_in_prop = bool(first.get('inProperty'))
+            log.info(f'{city_name}: map API marker keys={list(first.keys())} inProperty={first.get("inProperty")}')
+
         new_listings_this_city = []
 
         for raw in raw_listings:
@@ -338,12 +348,19 @@ def scrape_yad2() -> tuple:
                     continue
 
             if not is_seen(listing['id']):
-                if detail_fetches < MAX_DETAIL_FETCHES:
+                # Only hit the detail page if map API didn't give us amenity data
+                amenities_from_map = any(
+                    listing.get(k) is not None
+                    for k in ('parking', 'safe_room', 'balcony', 'elevator', 'ac')
+                )
+                if not amenities_from_map and detail_fetches < MAX_DETAIL_FETCHES:
                     detail = fetch_listing_detail(listing['token'])
                     if detail:
                         listing.update(detail)
                         log.info(f'Detail fetched for {listing["id"][:8]}: parking={listing.get("parking")} safe_room={listing.get("safe_room")}')
                     detail_fetches += 1
+                elif amenities_from_map:
+                    log.info(f'Amenities from map API for {listing["id"][:8]}: parking={listing.get("parking")} safe_room={listing.get("safe_room")} balcony={listing.get("balcony")}')
                 if require_parking and listing.get('parking') is False:
                     log.info(f'Skipping {listing["id"][:8]} — no parking (filter active)')
                     continue
