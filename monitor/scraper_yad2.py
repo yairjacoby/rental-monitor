@@ -219,52 +219,43 @@ def _extract_in_property_from_html(html: str, token: str) -> dict:
         return {}
 
 
-def _fetch_from_gateway(token: str) -> dict:
-    """Try gw.yad2.co.il detail endpoints — same subdomain as map API, no Radware."""
-    for path in [
-        f'https://gw.yad2.co.il/realestate-feed/rent/item/{token}',
-        f'https://gw.yad2.co.il/feed/item/{token}',
-        f'https://gw.yad2.co.il/item/{token}',
-    ]:
-        try:
-            resp = requests.get(path, headers=HEADERS, impersonate='chrome124', timeout=8)
-            log.info(f'Gateway probe {path}: status={resp.status_code}')
-            if resp.status_code == 200:
-                data = resp.json()
-                in_prop = ((data.get('data') or {}).get('inProperty')
-                           or data.get('inProperty'))
-                if in_prop:
-                    log.info(f'Gateway detail for {token}: {in_prop}')
-                    return _parse_in_property(in_prop)
-        except Exception as e:
-            log.debug(f'Gateway probe {path} failed: {e}')
-    return {}
-
-
 def fetch_listing_detail(token: str) -> dict:
-    """Fetch amenity data for a listing.
-    Tries gw.yad2.co.il gateway first (no Radware), then curl_cffi, then Playwright."""
-
-    # ── Attempt 0: gateway API (gw.yad2.co.il — same as map API, no Radware) ──
-    result = _fetch_from_gateway(token)
-    if result:
-        log.info(f'Detail {token}: fetched via gateway API')
-        return result
-
+    """Fetch amenity + description data for a listing.
+    Attempt 1: curl_cffi (fast, works on residential IPs)
+    Attempt 2: ScraperAPI residential proxy (bypasses Railway datacenter IP block)
+    Attempt 3: Playwright stealth (last resort)
+    """
+    import os, urllib.parse
     url = f'https://www.yad2.co.il/item/{token}'
 
-    # ── Attempt 1: curl_cffi (fast; works unless Railway IP is Radware-blocked) ──
+    # ── Attempt 1: curl_cffi (works on non-datacenter IPs, e.g. local dev) ──────
     try:
         resp = requests.get(url, headers={**HEADERS, 'Accept': 'text/html'}, impersonate='chrome124', timeout=12)
         result = _extract_in_property_from_html(resp.text, token)
         if result:
             log.info(f'Detail {token}: fetched via curl_cffi')
             return result
-        log.info(f'Detail {token}: curl_cffi got no __NEXT_DATA__ (Radware block?) — trying Playwright')
     except Exception as e:
-        log.info(f'Detail {token}: curl_cffi failed ({e}) — trying Playwright')
+        log.debug(f'Detail {token}: curl_cffi failed ({e})')
 
-    # ── Attempt 2: Playwright with stealth (bypasses Radware JS challenge) ────────
+    # ── Attempt 2: ScraperAPI residential proxy (bypasses Radware on Railway) ───
+    scraperapi_key = os.environ.get('SCRAPERAPI_KEY')
+    if scraperapi_key:
+        try:
+            proxy_url = (f'https://api.scraperapi.com/?api_key={scraperapi_key}'
+                         f'&url={urllib.parse.quote(url, safe="")}')
+            resp = requests.get(proxy_url, impersonate='chrome124', timeout=30)
+            result = _extract_in_property_from_html(resp.text, token)
+            if result:
+                log.info(f'Detail {token}: fetched via ScraperAPI')
+                return result
+            log.warning(f'Detail {token}: ScraperAPI returned no __NEXT_DATA__')
+        except Exception as e:
+            log.warning(f'Detail {token}: ScraperAPI failed ({e})')
+    else:
+        log.info(f'Detail {token}: SCRAPERAPI_KEY not set — skipping proxy attempt')
+
+    # ── Attempt 3: Playwright with stealth ───────────────────────────────────────
     try:
         from playwright.sync_api import sync_playwright
         try:
@@ -314,27 +305,15 @@ def fetch_listing_detail(token: str) -> dict:
         return {}
 
 
-_detail_probe_done = False
-
-
 def scrape_yad2() -> tuple:
     """
     Main entry point. Scrapes all configured cities and neighborhoods.
     Returns (new_listings, cities_with_no_results).
     """
-    global _detail_probe_done
     cities = get_cities()
     if not cities:
         log.warning('No cities configured — skipping Yad2 scrape')
         return [], []
-
-    # One-time probe on first run: verify fetch_listing_detail works on this host
-    if not _detail_probe_done:
-        _detail_probe_done = True
-        _probe_token = 't5t56vna'
-        log.info(f'DETAIL_PROBE: testing fetch_listing_detail on this host (token={_probe_token})')
-        _probe_result = fetch_listing_detail(_probe_token)
-        log.info(f'DETAIL_PROBE result: {_probe_result}')
 
     rooms_min = float(get_filter('rooms_min', '4'))
     require_parking   = get_filter('must_have_parking',  'false') == 'true'
@@ -365,11 +344,6 @@ def scrape_yad2() -> tuple:
             city_id, region_id, area_id=area_id,
             min_rooms=rooms_min, max_price=max_price
         )
-
-        # Log full first marker to reveal all available fields (runs once per city)
-        if raw_listings:
-            import json as _json
-            log.info(f'{city_name} FULL_MARKER: {_json.dumps(raw_listings[0], ensure_ascii=False, default=str)}')
 
         new_listings_this_city = []
 
