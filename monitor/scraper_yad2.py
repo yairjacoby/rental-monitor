@@ -219,8 +219,38 @@ def _extract_in_property_from_html(html: str, token: str) -> dict:
         return {}
 
 
+def _fetch_from_gateway(token: str) -> dict:
+    """Try gw.yad2.co.il detail endpoints — same subdomain as map API, no Radware."""
+    for path in [
+        f'https://gw.yad2.co.il/realestate-feed/rent/item/{token}',
+        f'https://gw.yad2.co.il/feed/item/{token}',
+        f'https://gw.yad2.co.il/item/{token}',
+    ]:
+        try:
+            resp = requests.get(path, headers=HEADERS, impersonate='chrome124', timeout=8)
+            log.info(f'Gateway probe {path}: status={resp.status_code}')
+            if resp.status_code == 200:
+                data = resp.json()
+                in_prop = ((data.get('data') or {}).get('inProperty')
+                           or data.get('inProperty'))
+                if in_prop:
+                    log.info(f'Gateway detail for {token}: {in_prop}')
+                    return _parse_in_property(in_prop)
+        except Exception as e:
+            log.debug(f'Gateway probe {path} failed: {e}')
+    return {}
+
+
 def fetch_listing_detail(token: str) -> dict:
-    """Fetch amenity data for a listing. Tries curl_cffi first, falls back to Playwright."""
+    """Fetch amenity data for a listing.
+    Tries gw.yad2.co.il gateway first (no Radware), then curl_cffi, then Playwright."""
+
+    # ── Attempt 0: gateway API (gw.yad2.co.il — same as map API, no Radware) ──
+    result = _fetch_from_gateway(token)
+    if result:
+        log.info(f'Detail {token}: fetched via gateway API')
+        return result
+
     url = f'https://www.yad2.co.il/item/{token}'
 
     # ── Attempt 1: curl_cffi (fast; works unless Railway IP is Radware-blocked) ──
@@ -323,12 +353,6 @@ def scrape_yad2() -> tuple:
             city_id, region_id, area_id=area_id,
             min_rooms=rooms_min, max_price=max_price
         )
-
-        # One-time log per city to reveal map API marker structure
-        if raw_listings:
-            first = raw_listings[0]
-            has_in_prop = bool(first.get('inProperty'))
-            log.info(f'{city_name}: map API marker keys={list(first.keys())} inProperty={first.get("inProperty")}')
 
         new_listings_this_city = []
 
