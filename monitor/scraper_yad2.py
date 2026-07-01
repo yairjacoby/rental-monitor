@@ -145,6 +145,10 @@ def parse_listing(raw: dict, city_name: str) -> dict:
 
     # Try to get amenities directly from the map API marker (gw.yad2.co.il — no Radware)
     in_prop_raw = raw.get('inProperty') or {}
+    if in_prop_raw:
+        log.info(f'inProperty from map for token {token}: {in_prop_raw}')
+    else:
+        log.info(f'inProperty absent from map marker for token {token}')
     amenities = _parse_in_property(in_prop_raw)
 
     return {
@@ -176,15 +180,19 @@ def parse_listing(raw: dict, city_name: str) -> dict:
 
 def _parse_in_property(in_prop: dict) -> dict:
     """Map Yad2 inProperty fields to our listing keys."""
+    def _bool(val):
+        if val is None:
+            return None
+        return bool(val)
     return {
-        'parking':   in_prop.get('includeParking'),
-        'safe_room': in_prop.get('includeSecurityRoom'),
-        'balcony':   in_prop.get('includeBalcony'),
-        'elevator':  in_prop.get('includeElevator'),
-        'ac':        in_prop.get('includeAirconditioner'),
-        'storage':   in_prop.get('includeWarehouse'),
-        'furnished': in_prop.get('includeFurnished'),
-        'boiler':    in_prop.get('includeBoiler'),
+        'parking':   _bool(in_prop.get('includeParking')),
+        'safe_room': _bool(in_prop.get('includeSecurityRoom')),
+        'balcony':   _bool(in_prop.get('includeBalcony')),
+        'elevator':  _bool(in_prop.get('includeElevator')),
+        'ac':        _bool(in_prop.get('includeAirconditioner')),
+        'storage':   _bool(in_prop.get('includeWarehouse')),
+        'furnished': _bool(in_prop.get('includeFurnished')),
+        'boiler':    _bool(in_prop.get('includeBoiler')),
     }
 
 
@@ -335,17 +343,19 @@ def scrape_yad2() -> tuple:
 
         neighborhoods = get_neighborhoods(city_name)
 
-        # Always use area 54 for city-level search, filter by neighborhood post-fetch
-        area_id = neighborhoods[0].get('yad2_area_id') if neighborhoods else None
+        # City-level fetch (no area_id) — filter by neighborhood name post-fetch.
+        # Using a single neighborhood's area_id when multiple are configured would
+        # silently exclude listings in the other neighbourhoods.
         nbhd_names = [n['name'].lower().replace('שכונה ', '').replace('מתחם ', '').strip()
                      for n in neighborhoods] if neighborhoods else []
 
         raw_listings = fetch_listings(
-            city_id, region_id, area_id=area_id,
+            city_id, region_id,
             min_rooms=rooms_min, max_price=max_price
         )
 
         new_listings_this_city = []
+        neighborhood_matched_count = 0  # listings that pass the neighborhood filter (seen or not)
 
         for raw in raw_listings:
             listing = parse_listing(raw, city_name)
@@ -361,6 +371,8 @@ def scrape_yad2() -> tuple:
                            for n in nbhd_names):
                     log.info(f'Skipping {listing_nbhd} — not in {nbhd_names}')
                     continue
+
+            neighborhood_matched_count += 1
 
             if not is_seen(listing['id']):
                 # Only hit the detail page if map API didn't give us amenity data
@@ -386,8 +398,10 @@ def scrape_yad2() -> tuple:
                 new_listings.append(listing)
                 new_listings_this_city.append(listing)
 
-        log.info(f'{city_name}: {len(raw_listings)} raw → {len(new_listings_this_city)} new (unseen)')
-        if nbhd_names and not new_listings_this_city:
+        log.info(f'{city_name}: {len(raw_listings)} raw → {neighborhood_matched_count} neighborhood-matched → {len(new_listings_this_city)} new (unseen)')
+        # Only suggest expanding when the neighbourhood filter blocks everything — not
+        # when listings exist but are all already seen (which is normal operation).
+        if nbhd_names and raw_listings and neighborhood_matched_count == 0:
             cities_with_no_results.append(city_name)
 
     log.info(f'Yad2: {len(new_listings)} new listings')

@@ -246,6 +246,30 @@ def clear_today_alerts():
         log.error(f'clear_today_alerts error: {e}')
 
 
+def get_expansion_cooldown(city_name: str):
+    """Return the datetime of the last expansion suggestion sent for city_name, or None."""
+    import datetime
+    try:
+        result = get_client().table('monitor_state').select('value').eq(
+            'key', f'expansion_cooldown_{city_name}').execute()
+        if result.data:
+            return datetime.datetime.fromisoformat(result.data[0]['value'])
+        return None
+    except Exception as e:
+        log.error(f'get_expansion_cooldown error: {e}')
+        return None
+
+
+def set_expansion_cooldown(city_name: str, when):
+    try:
+        get_client().table('monitor_state').upsert({
+            'key': f'expansion_cooldown_{city_name}',
+            'value': when.isoformat()
+        }, on_conflict='key').execute()
+    except Exception as e:
+        log.error(f'set_expansion_cooldown error: {e}')
+
+
 def get_city_thread_id(city_name: str):
     try:
         result = get_client().table('monitor_state').select('value').eq(

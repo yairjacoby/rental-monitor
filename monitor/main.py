@@ -55,12 +55,15 @@ def send_expansion_suggestion(city_name: str):
     """Send a Telegram message suggesting to expand search when no listings found."""
     import datetime
     import requests as _requests
+    from config_store import get_expansion_cooldown, set_expansion_cooldown
     now = datetime.datetime.now()
-    last = _expansion_cooldown.get(city_name)
+    # Check in-memory cache first, then Supabase (survives Railway restarts)
+    last = _expansion_cooldown.get(city_name) or get_expansion_cooldown(city_name)
     if last and (now - last).total_seconds() < 6 * 3600:
         log.debug(f'Expansion suggestion for {city_name} suppressed (cooldown)')
         return
     _expansion_cooldown[city_name] = now
+    set_expansion_cooldown(city_name, now)
     token = os.environ.get('TELEGRAM_BOT_TOKEN')
     chat_id = os.environ.get('TELEGRAM_CHAT_ID')
     if not token or not chat_id:
