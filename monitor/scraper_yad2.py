@@ -14,7 +14,7 @@ import datetime
 import zoneinfo
 from curl_cffi import requests
 from typing import Optional
-from seen_store import is_seen, mark_seen
+from seen_store import is_seen, mark_seen, get_seen_set
 from config_store import get_cities, get_neighborhoods, get_filter
 
 log = logging.getLogger(__name__)
@@ -145,10 +145,6 @@ def parse_listing(raw: dict, city_name: str) -> dict:
 
     # Try to get amenities directly from the map API marker (gw.yad2.co.il — no Radware)
     in_prop_raw = raw.get('inProperty') or {}
-    if in_prop_raw:
-        log.info(f'inProperty from map for token {token}: {in_prop_raw}')
-    else:
-        log.info(f'inProperty absent from map marker for token {token}')
     amenities = _parse_in_property(in_prop_raw)
 
     return {
@@ -354,54 +350,61 @@ def scrape_yad2() -> tuple:
             min_rooms=rooms_min, max_price=max_price
         )
 
-        new_listings_this_city = []
-        neighborhood_matched_count = 0  # listings that pass the neighborhood filter (seen or not)
-
+        # Pass 1: parse all raw markers and apply neighbourhood filter
+        matched_listings = []
+        in_prop_present = 0
         for raw in raw_listings:
             listing = parse_listing(raw, city_name)
+            if raw.get('inProperty'):
+                in_prop_present += 1
 
-            # Strict neighborhood filter — skip if neighborhood unknown or doesn't match
             if nbhd_names:
                 listing_nbhd = listing.get('neighborhood', '').lower().strip()
                 if not listing_nbhd:
-                    log.info('Skipping listing — neighborhood not specified by Yad2')
                     continue
                 listing_nbhd_clean = listing_nbhd.replace('שכונה ', '').replace('מתחם ', '').strip()
                 if not any(n in listing_nbhd_clean or listing_nbhd_clean in n
                            for n in nbhd_names):
-                    log.info(f'Skipping {listing_nbhd} — not in {nbhd_names}')
                     continue
 
-            neighborhood_matched_count += 1
+            matched_listings.append(listing)
 
-            if not is_seen(listing['id']):
-                # Only hit the detail page if map API didn't give us amenity data
-                amenities_from_map = any(
-                    listing.get(k) is not None
-                    for k in ('parking', 'safe_room', 'balcony', 'elevator', 'ac')
-                )
-                if not amenities_from_map and detail_fetches < MAX_DETAIL_FETCHES:
-                    detail = fetch_listing_detail(listing['token'])
-                    if detail:
-                        listing.update(detail)
-                        log.info(f'Detail fetched for {listing["id"][:8]}: parking={listing.get("parking")} safe_room={listing.get("safe_room")}')
-                    detail_fetches += 1
-                elif amenities_from_map:
-                    log.info(f'Amenities from map API for {listing["id"][:8]}: parking={listing.get("parking")} safe_room={listing.get("safe_room")} balcony={listing.get("balcony")}')
-                if require_parking and listing.get('parking') is False:
-                    log.info(f'Skipping {listing["id"][:8]} — no parking (filter active)')
-                    continue
-                if require_safe_room and listing.get('safe_room') is False:
-                    log.info(f'Skipping {listing["id"][:8]} — no safe room (filter active)')
-                    continue
-                mark_seen(listing['id'], source='yad2')
-                new_listings.append(listing)
-                new_listings_this_city.append(listing)
+        log.info(f'{city_name}: {len(raw_listings)} raw ({in_prop_present} with inProperty) → {len(matched_listings)} neighbourhood-matched')
 
-        log.info(f'{city_name}: {len(raw_listings)} raw → {neighborhood_matched_count} neighborhood-matched → {len(new_listings_this_city)} new (unseen)')
+        # Pass 2: batch seen-check, then fetch details only for new listings
+        seen_ids = get_seen_set([l['id'] for l in matched_listings])
+        new_listings_this_city = []
+
+        for listing in matched_listings:
+            if listing['id'] in seen_ids:
+                continue
+
+            amenities_from_map = any(
+                listing.get(k) is not None
+                for k in ('parking', 'safe_room', 'balcony', 'elevator', 'ac')
+            )
+            if not amenities_from_map and detail_fetches < MAX_DETAIL_FETCHES:
+                detail = fetch_listing_detail(listing['token'])
+                if detail:
+                    listing.update(detail)
+                    log.info(f'Detail fetched for {listing["id"][:8]}: parking={listing.get("parking")} safe_room={listing.get("safe_room")}')
+                detail_fetches += 1
+
+            if require_parking and listing.get('parking') is False:
+                log.info(f'Skipping {listing["id"][:8]} — no parking (filter active)')
+                continue
+            if require_safe_room and listing.get('safe_room') is False:
+                log.info(f'Skipping {listing["id"][:8]} — no safe room (filter active)')
+                continue
+
+            mark_seen(listing['id'], source='yad2')
+            new_listings.append(listing)
+            new_listings_this_city.append(listing)
+
+        log.info(f'{city_name}: {len(new_listings_this_city)} new (unseen)')
         # Only suggest expanding when the neighbourhood filter blocks everything — not
         # when listings exist but are all already seen (which is normal operation).
-        if nbhd_names and raw_listings and neighborhood_matched_count == 0:
+        if nbhd_names and raw_listings and not matched_listings:
             cities_with_no_results.append(city_name)
 
     log.info(f'Yad2: {len(new_listings)} new listings')

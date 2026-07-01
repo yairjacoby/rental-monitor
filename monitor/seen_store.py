@@ -36,6 +36,18 @@ def is_seen(listing_id: str) -> bool:
         return False
 
 
+def get_seen_set(listing_ids: list) -> set:
+    """Batch lookup — returns set of IDs that have already been seen."""
+    if not listing_ids:
+        return set()
+    try:
+        result = get_client().table('seen').select('id').in_('id', listing_ids).execute()
+        return {r['id'] for r in (result.data or [])}
+    except Exception as e:
+        log.error(f'get_seen_set error: {e}')
+        return set()
+
+
 def mark_seen(listing_id: str, source: str = 'unknown'):
     try:
         get_client().table('seen').upsert({
